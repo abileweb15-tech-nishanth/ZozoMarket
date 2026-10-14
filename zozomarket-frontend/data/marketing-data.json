@@ -1,0 +1,285 @@
+{
+  "dashboardKpis": {
+    "emailsDelivered": { "value": "94,300", "trend": 12.4 },
+    "emailOpenRate": { "value": "39.8%", "trend": 2.1 },
+    "socialEngagement": { "value": "27,000", "trend": 18.6 },
+    "scheduledCampaigns": { "value": "9", "trend": -1 },
+    "totalReach": { "value": "306,000", "trend": 14.2 },
+    "avgClickRate": { "value": "6.1%", "trend": 0.8 },
+    "newFollowers": { "value": "+1,770", "trend": 6.9 }
+  },
+  "emailCampaigns": [
+    {
+      "id": "c1",
+      "name": "Spring Collection Launch",
+      "audience": "All Subscribers",
+      "type": "Promotional",
+      "status": "Sent",
+      "date": "2026-10-02",
+      "recipients": 18420,
+      "delivery": 98.6,
+      "open": 41.2,
+      "click": 6.8
+    },
+    {
+      "id": "c2",
+      "name": "October Newsletter",
+      "audience": "Newsletter List",
+      "type": "Newsletter",
+      "status": "Scheduled",
+      "date": "2026-10-15",
+      "recipients": 12350,
+      "delivery": null,
+      "open": null,
+      "click": null
+    },
+    {
+      "id": "c3",
+      "name": "Loyalty Rewards Reminder",
+      "audience": "VIP Customers",
+      "type": "Announcement",
+      "status": "Sending",
+      "date": "2026-10-12",
+      "recipients": 3210,
+      "delivery": 97.1,
+      "open": 18.4,
+      "click": 2.1
+    },
+    {
+      "id": "c4",
+      "name": "Holiday Gift Guide",
+      "audience": "All Subscribers",
+      "type": "Promotional",
+      "status": "Draft",
+      "date": "2026-11-20",
+      "recipients": 18420,
+      "delivery": null,
+      "open": null,
+      "click": null
+    },
+    {
+      "id": "c5",
+      "name": "Welcome Series — Email 1",
+      "audience": "New Signups",
+      "type": "Automated",
+      "status": "Sent",
+      "date": "2026-09-28",
+      "recipients": 942,
+      "delivery": 99.2,
+      "open": 58.7,
+      "click": 12.4
+    },
+    {
+      "id": "c6",
+      "name": "Flash Sale 48h",
+      "audience": "Engaged 90 days",
+      "type": "Promotional",
+      "status": "Failed",
+      "date": "2026-09-21",
+      "recipients": 7650,
+      "delivery": 12.0,
+      "open": 3.1,
+      "click": 0.4
+    },
+    {
+      "id": "c7",
+      "name": "Product Update: Cold Brew Kit",
+      "audience": "Customers",
+      "type": "Announcement",
+      "status": "Sent",
+      "date": "2026-09-14",
+      "recipients": 9880,
+      "delivery": 98.9,
+      "open": 36.5,
+      "click": 5.2
+    },
+    {
+      "id": "c8",
+      "name": "Barista Workshop Invite",
+      "audience": "Local Customers",
+      "type": "Announcement",
+      "status": "Scheduled",
+      "date": "2026-10-22",
+      "recipients": 2140,
+      "delivery": null,
+      "open": null,
+      "click": null
+    }
+  ],
+  "socialPosts": [
+    {
+      "id": "p1",
+      "caption": "Autumn is here and so is our Maple Oat Latte. Available in all stores starting today!",
+      "platforms": ["Instagram", "Facebook"],
+      "date": "2026-10-13 09:00",
+      "status": "Scheduled",
+      "image": "/images/post-latte.png"
+    },
+    {
+      "id": "p2",
+      "caption": "Meet the team behind every roast — a look inside our roastery.",
+      "platforms": ["LinkedIn", "YouTube"],
+      "date": "2026-10-08 14:30",
+      "status": "Published",
+      "image": "/images/post-roastery.png",
+      "likes": 1284,
+      "comments": 96,
+      "shares": 41
+    },
+    {
+      "id": "p3",
+      "caption": "3 ways to brew the perfect cold brew at home. Save this for later!",
+      "platforms": ["Instagram", "Pinterest", "TikTok"],
+      "date": "2026-10-05 18:00",
+      "status": "Published",
+      "image": "/images/post-coldbrew.png",
+      "likes": 3420,
+      "comments": 210,
+      "shares": 388
+    },
+    {
+      "id": "p4",
+      "caption": "Workshop seats are filling up fast. Reserve yours via the link in bio.",
+      "platforms": ["X", "Facebook"],
+      "date": "2026-10-16 12:00",
+      "status": "Draft",
+      "image": "/images/post-workshop.png"
+    },
+    {
+      "id": "p5",
+      "caption": "Flash sale: 20% off all beans this weekend only.",
+      "platforms": ["Instagram", "X"],
+      "date": "2026-09-20 10:00",
+      "status": "Failed",
+      "image": "/images/post-beans.png"
+    },
+    {
+      "id": "p6",
+      "caption": "Our new compostable cups are rolling out across all locations.",
+      "platforms": ["LinkedIn", "Facebook", "Instagram"],
+      "date": "2026-10-18 08:30",
+      "status": "Scheduled",
+      "image": "/images/post-cups.png"
+    }
+  ],
+  "contacts": [
+    {
+      "id": "u1",
+      "name": "Priya Raman",
+      "email": "priya.raman@example.com",
+      "tags": ["VIP", "Newsletter"],
+      "source": "Signup Form",
+      "status": "Subscribed",
+      "added": "2026-09-30"
+    },
+    {
+      "id": "u2",
+      "name": "Marcus Lee",
+      "email": "marcus.lee@example.com",
+      "tags": ["Customer"],
+      "source": "CSV Import",
+      "status": "Subscribed",
+      "added": "2026-09-22"
+    },
+    {
+      "id": "u3",
+      "name": "Sofia García",
+      "email": "sofia.g@example.com",
+      "tags": ["Workshop"],
+      "source": "Landing Page",
+      "status": "Pending",
+      "added": "2026-10-09"
+    },
+    {
+      "id": "u4",
+      "name": "Tom Becker",
+      "email": "tom.becker@example.com",
+      "tags": ["Customer"],
+      "source": "Checkout",
+      "status": "Unsubscribed",
+      "added": "2026-08-14"
+    },
+    {
+      "id": "u5",
+      "name": "Aiko Tanaka",
+      "email": "aiko.t@example.com",
+      "tags": ["VIP"],
+      "source": "Popup Form",
+      "status": "Subscribed",
+      "added": "2026-10-01"
+    },
+    {
+      "id": "u6",
+      "name": "David Okafor",
+      "email": "d.okafor@example.com",
+      "tags": ["Newsletter"],
+      "source": "Signup Form",
+      "status": "Subscribed",
+      "added": "2026-07-19"
+    },
+    {
+      "id": "u7",
+      "name": "Lena Novak",
+      "email": "lena.novak@example.com",
+      "tags": ["Local"],
+      "source": "Manual",
+      "status": "Subscribed",
+      "added": "2026-10-11"
+    }
+  ],
+  "calendarEvents": [
+    { "id": "c1", "title": "Spring Collection Launch", "date": "2026-10-02", "time": "10:00", "channel": "Email", "status": "Sent" },
+    { "id": "c2", "title": "October Newsletter", "date": "2026-10-15", "time": "10:00", "channel": "Email", "status": "Scheduled" },
+    { "id": "c3", "title": "Loyalty Rewards Reminder", "date": "2026-10-12", "time": "10:00", "channel": "Email", "status": "Sending" },
+    { "id": "c8", "title": "Barista Workshop Invite", "date": "2026-10-22", "time": "10:00", "channel": "Email", "status": "Scheduled" },
+    { "id": "p1", "title": "Autumn is here and so is our Maple Oat…", "date": "2026-10-13", "time": "09:00", "channel": "Social", "status": "Scheduled" },
+    { "id": "p2", "title": "Meet the team behind every roast…", "date": "2026-10-08", "time": "14:30", "channel": "Social", "status": "Published" },
+    { "id": "p3", "title": "3 ways to brew the perfect cold brew…", "date": "2026-10-05", "time": "18:00", "channel": "Social", "status": "Published" },
+    { "id": "p4", "title": "Workshop seats are filling up fast…", "date": "2026-10-16", "time": "12:00", "channel": "Social", "status": "Draft" },
+    { "id": "p6", "title": "Our new compostable cups are rolling out…", "date": "2026-10-18", "time": "08:30", "channel": "Social", "status": "Scheduled" },
+    { "id": "e1", "title": "Weekend Brunch Promo", "date": "2026-10-24", "time": "09:30", "channel": "Social", "status": "Scheduled" },
+    { "id": "e2", "title": "Halloween Special Email", "date": "2026-10-29", "time": "08:00", "channel": "Email", "status": "Draft" }
+  ],
+  "emailPerformance": [
+    { "week": "Sep 1", "delivered": 12400, "opens": 4800, "clicks": 720 },
+    { "week": "Sep 8", "delivered": 14100, "opens": 5600, "clicks": 810 },
+    { "week": "Sep 15", "delivered": 13200, "opens": 5100, "clicks": 760 },
+    { "week": "Sep 22", "delivered": 16800, "opens": 6900, "clicks": 1050 },
+    { "week": "Sep 29", "delivered": 18200, "opens": 7400, "clicks": 1180 },
+    { "week": "Oct 6", "delivered": 19600, "opens": 8100, "clicks": 1320 }
+  ],
+  "socialPerformance": [
+    { "week": "Sep 1", "engagement": 3200, "reach": 41000, "impressions": 62000, "followers": 12100 },
+    { "week": "Sep 8", "engagement": 3900, "reach": 46000, "impressions": 70500, "followers": 12380 },
+    { "week": "Sep 15", "engagement": 3600, "reach": 44200, "impressions": 66800, "followers": 12610 },
+    { "week": "Sep 22", "engagement": 4800, "reach": 52800, "impressions": 81000, "followers": 12990 },
+    { "week": "Sep 29", "engagement": 5400, "reach": 58100, "impressions": 89300, "followers": 13420 },
+    { "week": "Oct 6", "engagement": 6100, "reach": 63900, "impressions": 97200, "followers": 13870 }
+  ],
+  "platformBreakdown": [
+    { "platform": "Instagram", "engagement": 2840 },
+    { "platform": "Facebook", "engagement": 1220 },
+    { "platform": "LinkedIn", "engagement": 860 },
+    { "platform": "TikTok", "engagement": 740 },
+    { "platform": "X", "engagement": 310 },
+    { "platform": "Pinterest", "engagement": 130 }
+  ],
+  "templates": [
+    { "id": "t1", "name": "Monthly Roundup", "category": "Newsletter", "image": "/images/tpl-newsletter.png" },
+    { "id": "t2", "name": "Big Seasonal Sale", "category": "Promotional", "image": "/images/tpl-promo.png" },
+    { "id": "t3", "name": "Warm Welcome", "category": "Welcome Email", "image": "/images/tpl-welcome.png" },
+    { "id": "t4", "name": "New Arrival Spotlight", "category": "Product Launch", "image": "/images/tpl-launch.png" },
+    { "id": "t5", "name": "You’re Invited", "category": "Event Invitation", "image": "/images/tpl-event.png" },
+    { "id": "t6", "name": "Still Thinking It Over?", "category": "Abandoned Cart", "image": "/images/tpl-cart.png" },
+    { "id": "t7", "name": "We Miss You", "category": "Re-engagement", "image": "/images/tpl-reengage.png" },
+    { "id": "t8", "name": "Weekly Digest", "category": "Newsletter", "image": "/images/tpl-newsletter.png" }
+  ],
+  "mediaAssets": [
+    { "id": "m1", "name": "maple-latte-hero.png", "type": "Image", "size": "1.2 MB", "src": "/images/post-latte.png" },
+    { "id": "m2", "name": "roastery-tour.mp4", "type": "Video", "size": "48.6 MB", "src": "/images/post-roastery.png" },
+    { "id": "m3", "name": "cold-brew-steps.png", "type": "Image", "size": "980 KB", "src": "/images/post-coldbrew.png" },
+    { "id": "m4", "name": "workshop-banner.png", "type": "Image", "size": "760 KB", "src": "/images/post-workshop.png" },
+    { "id": "m5", "name": "beans-flatlay.png", "type": "Image", "size": "1.5 MB", "src": "/images/post-beans.png" },
+    { "id": "m6", "name": "compostable-cups.png", "type": "Image", "size": "1.1 MB", "src": "/images/post-cups.png" }
+  ]
+}
