@@ -8,9 +8,8 @@ import './globals.css'
 const _inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'ZozoMarket — Email & Social Media Marketing, Together',
-  description: 'Manage email campaigns and social media marketing in one unified platform.',
-  generator: 'v0.app',
+  title: 'ZozoMarket — Email Marketing Platform',
+  description: 'Create, automate, and track high-performing email marketing campaigns.',
 }
 
 export const viewport: Viewport = {

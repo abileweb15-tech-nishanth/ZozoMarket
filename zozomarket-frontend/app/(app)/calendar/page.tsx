@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PageHeader, Panel, StatusBadge, NativeSelect, Segmented, EmptyState } from '@/components/app/shared'
 import { api, type CalendarEvent } from '@/lib/api'
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
-const channelFilters = ['All', 'Email', 'Social'] as const
+const typeFilters = ['All Types', 'Newsletter', 'Promotional', 'Automated', 'Announcement'] as const
 
 type View = 'Month' | 'List'
 
@@ -18,7 +18,7 @@ export default function CalendarPage() {
   const [year, setYear] = useState(2026)
   const [month, setMonth] = useState(9) // October = 9 (0-indexed)
   const [view, setView] = useState<View>('Month')
-  const [channelFilter, setChannelFilter] = useState<(typeof channelFilters)[number]>('All')
+  const [typeFilter, setTypeFilter] = useState<(typeof typeFilters)[number]>('All Types')
 
   useEffect(() => {
     api.calendar.list().then(setEvents)
@@ -26,10 +26,10 @@ export default function CalendarPage() {
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
-      if (channelFilter !== 'All' && e.channel !== channelFilter) return false
+      if (typeFilter !== 'All Types' && e.type !== typeFilter) return false
       return true
     })
-  }, [events, channelFilter])
+  }, [events, typeFilter])
 
   const monthEvents = useMemo(() => {
     return filtered.filter((e) => {
@@ -38,7 +38,7 @@ export default function CalendarPage() {
     })
   }, [filtered, year, month])
 
-  // Calendar grid helpers
+  // Calendar grid calculation
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const weeks: (number | null)[][] = []
@@ -72,14 +72,14 @@ export default function CalendarPage() {
     <div>
       <PageHeader
         title="Campaign Calendar"
-        description="See all your email and social campaigns on a timeline."
+        description="Schedule and track all upcoming email newsletters, promotional blasts, and automated triggers."
         actions={
           <>
             <NativeSelect
-              label="Channel"
-              value={channelFilter}
-              onChange={(v) => setChannelFilter(v as (typeof channelFilters)[number])}
-              options={[...channelFilters]}
+              label="Campaign Type"
+              value={typeFilter}
+              onChange={(v) => setTypeFilter(v as (typeof typeFilters)[number])}
+              options={[...typeFilters]}
             />
             <Segmented label="View" value={view} onChange={setView} options={['Month', 'List'] as const} />
           </>
@@ -144,15 +144,11 @@ export default function CalendarPage() {
                                 {dayEvents.slice(0, 2).map((e) => (
                                   <span
                                     key={e.id}
-                                    className={cn(
-                                      'truncate rounded px-1 py-0.5 text-[10px] font-medium',
-                                      e.channel === 'Email'
-                                        ? 'bg-chart-1/15 text-chart-1'
-                                        : 'bg-chart-2/15 text-chart-2',
-                                    )}
-                                    title={e.title}
+                                    className="flex items-center gap-1 truncate rounded bg-primary/10 px-1 py-0.5 text-[10px] font-medium text-primary"
+                                    title={`${e.title} (${e.time})`}
                                   >
-                                    {e.title}
+                                    <Mail className="size-2.5 shrink-0" />
+                                    <span className="truncate">{e.title}</span>
                                   </span>
                                 ))}
                                 {dayEvents.length > 2 && (
@@ -177,8 +173,8 @@ export default function CalendarPage() {
           {monthEvents.length === 0 ? (
             <EmptyState
               icon={CalendarDays}
-              title="No events this month"
-              description="There are no campaigns or posts scheduled for this period."
+              title="No email campaigns scheduled"
+              description="There are no broadcasts or automations scheduled for this period."
             />
           ) : (
             <div className="divide-y divide-border">
@@ -186,13 +182,13 @@ export default function CalendarPage() {
                 .sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
                 .map((e) => (
                   <div key={e.id} className="flex items-center gap-4 px-5 py-3">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">
                       {new Date(e.date).getDate()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{e.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {e.time} · {e.channel}
+                        {e.time} · {e.type}
                       </p>
                     </div>
                     <StatusBadge status={e.status} />

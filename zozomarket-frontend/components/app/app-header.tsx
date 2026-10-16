@@ -48,7 +48,7 @@ export function AppHeader() {
       <div className="ml-auto flex items-center gap-2">
         <div className="relative hidden md:block">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input aria-label="Search" placeholder="Search campaigns, posts, contacts…" className="h-9 w-64 pl-9" />
+          <Input aria-label="Search" placeholder="Search campaigns, templates, contacts…" className="h-9 w-64 pl-9" />
         </div>
 
         <DropdownMenu>
@@ -74,7 +74,7 @@ export function AppHeader() {
             <DropdownMenuGroup>
               <DropdownMenuLabel>Notifications</DropdownMenuLabel>
               <DropdownMenuItem>“Spring Launch” email finished sending</DropdownMenuItem>
-              <DropdownMenuItem>Instagram post scheduled for tomorrow</DropdownMenuItem>
+              <DropdownMenuItem>“October Newsletter” scheduled for Oct 15</DropdownMenuItem>
               <DropdownMenuItem>42 new contacts from Signup Form</DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>

@@ -14,20 +14,6 @@ export type EmailCampaign = {
   click: number | null
 }
 
-export type Platform = 'Instagram' | 'Facebook' | 'LinkedIn' | 'X' | 'YouTube' | 'Pinterest' | 'TikTok'
-export type PostStatus = 'Draft' | 'Scheduled' | 'Published' | 'Failed'
-export type SocialPost = {
-  id: string
-  caption: string
-  platforms: Platform[]
-  date: string
-  status: PostStatus
-  image: string
-  likes?: number
-  comments?: number
-  shares?: number
-}
-
 export type Contact = {
   id: string
   name: string
@@ -43,7 +29,7 @@ export type CalendarEvent = {
   title: string
   date: string
   time: string
-  channel: 'Email' | 'Social'
+  type: 'Newsletter' | 'Promotional' | 'Automated' | 'Announcement'
   status: string
 }
 
@@ -67,19 +53,6 @@ export type EmailPerformancePoint = {
   delivered: number
   opens: number
   clicks: number
-}
-
-export type SocialPerformancePoint = {
-  week: string
-  engagement: number
-  reach: number
-  impressions: number
-  followers: number
-}
-
-export type PlatformBreakdownItem = {
-  platform: string
-  engagement: number
 }
 
 export type DashboardKPIs = typeof marketingData.dashboardKpis
@@ -152,44 +125,6 @@ export const api = {
     },
   },
 
-  socialPosts: {
-    async list(): Promise<SocialPost[]> {
-      await delay()
-      return getStorage<SocialPost[]>('social_posts', marketingData.socialPosts as SocialPost[])
-    },
-    async get(id: string): Promise<SocialPost | null> {
-      await delay()
-      const posts = await api.socialPosts.list()
-      return posts.find((p) => p.id === id) || null
-    },
-    async create(data: Omit<SocialPost, 'id'> & { id?: string }): Promise<SocialPost> {
-      await delay()
-      const posts = await api.socialPosts.list()
-      const created: SocialPost = {
-        ...data,
-        id: data.id || `p_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      }
-      setStorage('social_posts', [created, ...posts])
-      return created
-    },
-    async update(id: string, updates: Partial<SocialPost>): Promise<SocialPost> {
-      await delay()
-      const posts = await api.socialPosts.list()
-      const index = posts.findIndex((p) => p.id === id)
-      if (index === -1) throw new Error(`Post with id ${id} not found`)
-      const updated = { ...posts[index], ...updates }
-      posts[index] = updated
-      setStorage('social_posts', posts)
-      return updated
-    },
-    async delete(id: string): Promise<{ success: boolean }> {
-      await delay()
-      const posts = await api.socialPosts.list()
-      setStorage('social_posts', posts.filter((p) => p.id !== id))
-      return { success: true }
-    },
-  },
-
   contacts: {
     async list(): Promise<Contact[]> {
       await delay()
@@ -254,14 +189,6 @@ export const api = {
     async getEmailPerformance(): Promise<EmailPerformancePoint[]> {
       await delay()
       return marketingData.emailPerformance
-    },
-    async getSocialPerformance(): Promise<SocialPerformancePoint[]> {
-      await delay()
-      return marketingData.socialPerformance
-    },
-    async getPlatformBreakdown(): Promise<PlatformBreakdownItem[]> {
-      await delay()
-      return marketingData.platformBreakdown
     },
   },
 
