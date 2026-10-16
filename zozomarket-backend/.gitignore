@@ -1,0 +1,12 @@
+.venv/
+.env
+*.db
+*.db-shm
+*.db-wal
+storage/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+celerybeat-schedule*

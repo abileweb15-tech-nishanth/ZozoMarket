@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>$title</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 48px auto; padding: 0 16px; color: #111; }
+    label { display: block; margin: 12px 0; font-size: 14px; }
+    input { display: block; width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #d4d4d8;
+            border-radius: 8px; box-sizing: border-box; }
+    input[type=checkbox] { display: inline; width: auto; }
+    button { padding: 12px 20px; border: 0; border-radius: 8px; background: #4f46e5; color: #fff;
+             font-weight: 600; cursor: pointer; }
+    .hp { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <h1>$title</h1>
+  <p>$description</p>
+  <form id="f">
+    <label>Name<input name="name" autocomplete="name"></label>
+    <label>Email<input name="email" type="email" autocomplete="email" required></label>
+    $extra_fields
+    <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+    <label><input type="checkbox" name="consent" required> I agree to receive emails</label>
+    <button type="submit">Subscribe</button>
+  </form>
+  <p id="msg" role="status"></p>
+  <script>
+    document.getElementById('f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const { name, email, website, consent, ...fields } = Object.fromEntries(new FormData(e.target));
+      const r = await fetch($submit_url_json, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, website, consent: consent === 'on', fields }),
+      });
+      const j = await r.json();
+      document.getElementById('msg').textContent = j.success ? j.data.message : (j.error || 'Something went wrong');
+      if (j.success && j.data.redirectUrl) location.href = j.data.redirectUrl;
+    });
+  </script>
+</body>
+</html>

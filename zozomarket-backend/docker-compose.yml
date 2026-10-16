@@ -1,0 +1,77 @@
+x-app: &app
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    DATABASE_URL: postgresql+asyncpg://zozo:zozo@db:5432/zozomarket
+    TASK_BACKEND: celery
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    AUTO_CREATE_TABLES: "false"
+    SCHEDULER_ENABLED: "false"
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *app-env
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    volumes:
+      - media:/data/media
+
+  worker:
+    <<: *app
+    command: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=4
+    healthcheck:
+      disable: true
+    volumes:
+      - media:/data/media
+    depends_on:
+      api:
+        condition: service_healthy
+
+  beat:
+    <<: *app
+    command: celery -A app.workers.celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zozo
+      POSTGRES_PASSWORD: zozo
+      POSTGRES_DB: zozomarket
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zozo -d zozomarket"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:
