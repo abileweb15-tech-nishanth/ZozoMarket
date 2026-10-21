@@ -4,7 +4,7 @@ from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UUIDMixin, str_enum
+from app.models.base import TimestampMixin, UUIDMixin, WorkspaceMixin, str_enum
 
 
 class MediaType(StrEnum):
@@ -14,7 +14,7 @@ class MediaType(StrEnum):
     OTHER = "Other"
 
 
-class MediaAsset(UUIDMixin, TimestampMixin, Base):
+class MediaAsset(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "media_assets"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

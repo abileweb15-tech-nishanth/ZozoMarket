@@ -39,32 +39,30 @@ export default function MediaLibraryPage() {
   const [renameName, setRenameName] = useState('')
 
   useEffect(() => {
-    api.media.list().then(setAssets)
+    api.media.list().then(setAssets).catch((err: Error) => toast.error(err.message))
   }, [])
 
   const filtered = assets.filter((a) =>
     a.name.toLowerCase().includes(search.toLowerCase()),
   )
 
-  const handleUpload = () => {
-    const newAsset: MediaAsset = {
-      id: `m_${Date.now()}`,
-      name: `new-upload-${Date.now()}.png`,
-      type: 'Image',
-      size: '500 KB',
-      src: '/images/post-latte.png',
+  const handleUpload = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const created = await api.media.upload(file)
+      setAssets((prev) => [created, ...prev])
+      toast.success('File uploaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
     }
-    api.media.create(newAsset).then((a) => {
-      setAssets((prev) => [a, ...prev])
-      toast.success('File uploaded (simulated)')
-    })
   }
 
   const handleDelete = (id: string) => {
     api.media.delete(id).then(() => {
       setAssets((prev) => prev.filter((a) => a.id !== id))
+      setDeleteTarget(null)
       toast.success('Asset deleted')
-    })
+    }).catch((err: Error) => toast.error(err.message))
   }
 
   const handleRename = () => {
@@ -89,8 +87,9 @@ export default function MediaLibraryPage() {
         title="Media Library"
         description="Manage images, videos and assets for your campaigns."
         actions={
-          <Button onClick={handleUpload}>
+          <Button nativeButton={false} render={<label />} className="cursor-pointer">
             <Upload /> Upload file
+            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,application/pdf" className="sr-only" onChange={(e) => { void handleUpload(e.target.files?.[0]); e.target.value = '' }} />
           </Button>
         }
       />
@@ -128,8 +127,7 @@ export default function MediaLibraryPage() {
                     ;(e.target as HTMLImageElement).style.display = 'none'
                   }}
                 />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/40">
-                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="absolute inset-x-2 bottom-2 flex justify-center gap-1">
                     <Button
                       variant="secondary"
                       size="icon"
@@ -162,7 +160,6 @@ export default function MediaLibraryPage() {
                     </Button>
                   </div>
                 </div>
-              </div>
               <div className="px-3 py-2.5">
                 <p className="truncate text-sm font-medium">{asset.name}</p>
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -211,11 +208,10 @@ export default function MediaLibraryPage() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="size-8"
+                        size="sm"
                         onClick={() => setDeleteTarget(asset.id)}
                       >
-                        <Trash2 className="size-3.5" />
+                        <Trash2 className="size-3.5" /> Delete
                       </Button>
                     </div>
                   </td>
@@ -228,7 +224,7 @@ export default function MediaLibraryPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        onOpenChange={() => setDeleteTarget(null)}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
         title="Delete asset"
         description="This asset will be removed permanently. Continue?"
         onConfirm={() => deleteTarget && handleDelete(deleteTarget)}

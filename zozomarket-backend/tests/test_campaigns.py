@@ -146,6 +146,7 @@ async def test_concurrent_dispatches_do_not_conflict(client, outbox, session):
     for cid in ids:
         (await session.get(Campaign, cid)).scheduled_at = dt.datetime.now(dt.UTC)
     await session.commit()
+    await session.close()
 
     from app.workers import jobs
 

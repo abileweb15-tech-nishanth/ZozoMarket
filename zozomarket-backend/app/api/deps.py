@@ -1,29 +1,47 @@
 import math
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated, Any, TypeVar
 
 from fastapi import Depends, Query, Security
-from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.security import verify_api_key
+from app.core.exceptions import UnauthorizedError
+from app.core.security import read_access_token
+from app.core.tenancy import current_workspace_id
+from app.models.account import User
 from app.schemas.common import ListResponse
 
 T = TypeVar("T")
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False, scheme_name="ApiKey")
 _bearer = HTTPBearer(auto_error=False, scheme_name="Bearer")
 
 
-async def require_api_key(
-    api_key: str | None = Security(_api_key_header),
+async def require_user(
+    db: DbSession,
     bearer: HTTPAuthorizationCredentials | None = Security(_bearer),
-) -> None:
-    """Accepts `X-API-Key: <key>` or `Authorization: Bearer <key>`."""
-    verify_api_key(api_key or (bearer.credentials if bearer else None))
+) -> AsyncIterator[User]:
+    """Require `Authorization: Bearer <access token>` and scope the request to that workspace."""
+    if bearer is None or bearer.scheme.lower() != "bearer":
+        raise UnauthorizedError("Missing access token")
+    payload = read_access_token(bearer.credentials)
+    if payload is None:
+        raise UnauthorizedError("Access token is invalid or expired")
+    user = await db.get(User, payload.get("sub"))
+    if user is None or user.workspace_id != payload.get("wid"):
+        raise UnauthorizedError("Access token is invalid or expired")
+    token = current_workspace_id.set(user.workspace_id)
+    try:
+        yield user
+    finally:
+        current_workspace_id.reset(token)
+
+
+CurrentUser = Annotated[User, Depends(require_user)]
 
 
 @dataclass(slots=True, frozen=True)

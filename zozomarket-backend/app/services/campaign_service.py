@@ -14,11 +14,24 @@ import logging
 from collections.abc import Sequence
 
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
+async def _commit_with_retry(session: AsyncSession, max_retries: int = 5) -> None:
+    for attempt in range(max_retries):
+        try:
+            await session.commit()
+            return
+        except OperationalError as exc:
+            if "database is locked" in str(exc).lower() and attempt < max_retries - 1:
+                await asyncio.sleep(0.08 * (attempt + 1))
+                continue
+            raise
+
 from app.core.config import settings
-from app.core.exceptions import AppError, InvalidStateError, NotFoundError
+from app.core.exceptions import AppError, ExternalServiceError, InvalidStateError, NotFoundError
+from app.models.account import Workspace
 from app.models.base import utcnow
 from app.models.campaign import EDITABLE_STATUSES, Campaign, CampaignStatus, CampaignType
 from app.models.contact import Contact
@@ -29,6 +42,7 @@ from app.services import analytics_service, contact_service, email_service
 from app.services.query import ilike, paginate
 from app.services.template_service import (
     SAMPLE_VARIABLES,
+    brand_blocks,
     ensure_preheader,
     render_blocks,
     render_merge_tags,
@@ -286,11 +300,23 @@ async def claim_due(session: AsyncSession, *, limit: int = 20) -> list[str]:
 # --- Dispatch -------------------------------------------------------------------------------
 
 
+def outbound_html(campaign: Campaign, workspace: Workspace | None) -> str:
+    design = brand_blocks(campaign.design or [], workspace)
+    if design:
+        return render_blocks(design, campaign.preheader)
+    return ensure_preheader(campaign.html or "", campaign.preheader)
+
+
 async def _send_one(
-    campaign: Campaign, message_id: str, contact: Contact, sem: asyncio.Semaphore
+    campaign: Campaign,
+    message_id: str,
+    contact: Contact,
+    sem: asyncio.Semaphore,
+    identity: tuple[str, str, str | None],
+    html: str,
 ) -> tuple[str, str | None, email_service.EmailDeliveryError | None]:
     body, subject, headers = email_service.personalise(
-        html=ensure_preheader(campaign.html, campaign.preheader),
+        html=html,
         subject=campaign.subject,
         contact_id=contact.id,
         name=contact.name,
@@ -298,14 +324,15 @@ async def _send_one(
         attributes=contact.attributes,
         message_id=message_id,
     )
+    from_name, from_email, reply_to = identity
     email = email_service.OutboundEmail(
         to=contact.email,
         subject=subject,
         html=body,
         headers=headers,
-        from_email=campaign.from_email or settings.EMAIL_FROM_ADDRESS,
-        from_name=campaign.from_name or settings.EMAIL_FROM_NAME,
-        reply_to=campaign.reply_to,
+        reply_to=reply_to,
+        from_email=from_email,
+        from_name=from_name,
     )
     async with sem:
         try:
@@ -323,6 +350,9 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
     if campaign is None or campaign.status is not CampaignStatus.SENDING:
         return
     logger.info("Dispatching campaign %s (%s)", campaign.id, campaign.name)
+    workspace = await session.get(Workspace, campaign.workspace_id)
+    identity = await sending_identity(session, campaign)
+    html = outbound_html(campaign, workspace)
     sem = asyncio.Semaphore(SEND_CONCURRENCY)
     already_sent = select(EmailMessage.contact_id).where(
         EmailMessage.campaign_id == campaign.id,
@@ -365,6 +395,7 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
                 try:
                     async with session.begin_nested():
                         message = EmailMessage(
+                            workspace_id=campaign.workspace_id,
                             campaign_id=campaign.id,
                             contact_id=contact.id,
                             to_email=contact.email,
@@ -374,10 +405,10 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
                     messages[message.id] = (message, contact)
                 except IntegrityError:
                     continue  # another worker already handled this recipient
-            await session.commit()
+            await _commit_with_retry(session)
 
             results = await asyncio.gather(
-                *(_send_one(campaign, mid, c, sem) for mid, (_, c) in messages.items())
+                *(_send_one(campaign, mid, c, sem, identity, html) for mid, (_, c) in messages.items())
             )
             for message_id, provider_id, error in results:
                 message = messages[message_id][0]
@@ -387,7 +418,7 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
                     await analytics_service.record_failure(
                         session, message, str(error), permanent=error.permanent
                     )
-            await session.commit()
+            await _commit_with_retry(session)
 
         totals = await session.execute(
             select(EmailMessage.status, func.count())
@@ -406,7 +437,7 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
             campaign.status = CampaignStatus.SENT
             campaign.failure_reason = f"{failed} of {total} deliveries failed" if failed else None
         campaign.sent_at = utcnow()
-        await session.commit()
+        await _commit_with_retry(session)
         logger.info("Campaign %s finished: %s", campaign.id, by_status)
     except Exception as exc:
         logger.exception("Dispatch of campaign %s crashed", campaign_id)
@@ -416,26 +447,44 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
             .where(Campaign.id == campaign_id)
             .values(status=CampaignStatus.FAILED, failure_reason=f"Dispatch error: {exc}"[:2000])
         )
-        await session.commit()
+        await _commit_with_retry(session)
+
+
+async def sending_identity(session: AsyncSession, campaign: Campaign) -> tuple[str, str, str | None]:
+    """From name, from email, and reply-to. Workspace profile wins over a blank campaign field."""
+    workspace = await session.get(Workspace, campaign.workspace_id)
+    from_name = (campaign.from_name or "").strip()
+    from_email = (campaign.from_email or "").strip()
+    reply_to = (campaign.reply_to or "").strip() or None
+    if workspace is not None:
+        from_name = (workspace.from_name or "").strip() or workspace.name or from_name
+        from_email = (workspace.from_email or "").strip() or from_email
+        reply_to = ((workspace.reply_to or "").strip() or None) or reply_to
+    return from_name or settings.EMAIL_FROM_NAME, from_email or settings.EMAIL_FROM_ADDRESS, reply_to
 
 
 async def send_test(session: AsyncSession, campaign_id: str, emails: Sequence[str]) -> int:
     campaign = await get_campaign(session, campaign_id)
     _assert_sendable(campaign)
+    workspace = await session.get(Workspace, campaign.workspace_id)
+    from_name, from_email, reply_to = await sending_identity(session, campaign)
     variables = dict(SAMPLE_VARIABLES)
-    html = render_merge_tags(ensure_preheader(campaign.html, campaign.preheader), variables)
+    html = render_merge_tags(outbound_html(campaign, workspace), variables)
     subject = "[Test] " + render_merge_tags(campaign.subject, variables, escape=False)
     for to in emails:
-        await email_service.send_email(
-            email_service.OutboundEmail(
-                to=str(to),
-                subject=subject,
-                html=html,
-                reply_to=campaign.reply_to,
-                from_email=campaign.from_email or settings.EMAIL_FROM_ADDRESS,
-                from_name=campaign.from_name or settings.EMAIL_FROM_NAME,
+        try:
+            await email_service.send_email(
+                email_service.OutboundEmail(
+                    to=str(to),
+                    subject=subject,
+                    html=html,
+                    reply_to=reply_to,
+                    from_email=from_email,
+                    from_name=from_name,
+                )
             )
-        )
+        except email_service.EmailDeliveryError as exc:
+            raise ExternalServiceError(str(exc)) from exc
     return len(emails)
 
 

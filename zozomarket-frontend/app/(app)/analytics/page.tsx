@@ -1,22 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, MailCheck, MailOpen, MousePointerClick } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader, KpiCard, Panel, NativeSelect, TableWrap, th, td } from '@/components/app/shared'
 import { TrendChart, BarsChart, C } from '@/components/app/charts'
-import { emailCampaigns, emailPerformance } from '@/lib/mock-data'
+import { api, type DashboardKPIs, type EmailCampaign, type EmailPerformancePoint } from '@/lib/api'
 
 export default function EmailAnalyticsPage() {
   const [range, setRange] = useState('Last 30 days')
-  const sent = emailCampaigns.filter((c) => c.open !== null)
+  const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
+  const [emailPerformance, setEmailPerformance] = useState<EmailPerformancePoint[]>([])
+  const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
+
+  useEffect(() => {
+    api.dashboard.getKPIs().then(setKpis).catch((err: Error) => toast.error(err.message))
+    api.analytics.getEmailPerformance().then(setEmailPerformance).catch((err: Error) => toast.error(err.message))
+    api.campaigns.list().then(setCampaigns).catch((err: Error) => toast.error(err.message))
+  }, [])
+
+  const sent = campaigns.filter((c) => c.open !== null)
 
   return (
     <div>
       <PageHeader
         title="Email Analytics"
-        description="Comprehensive delivery, open rates, and click engagement across all your campaigns and automations."
+        description="Delivery, open rates, and click engagement across your campaigns."
         actions={
           <>
             <NativeSelect
@@ -38,9 +48,9 @@ export default function EmailAnalyticsPage() {
           Key Delivery & Engagement Metrics
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <KpiCard label="Delivered emails" value="95,000" trend={12.4} icon={MailCheck} />
-          <KpiCard label="Avg. open rate" value="39.8%" trend={2.1} icon={MailOpen} />
-          <KpiCard label="Avg. click rate" value="6.1%" trend={0.8} icon={MousePointerClick} />
+          <KpiCard label="Delivered emails" value={kpis?.emailsDelivered.value ?? '—'} trend={kpis?.emailsDelivered.trend ?? 0} icon={MailCheck} />
+          <KpiCard label="Avg. open rate" value={kpis?.emailOpenRate.value ?? '—'} trend={kpis?.emailOpenRate.trend ?? 0} icon={MailOpen} />
+          <KpiCard label="Avg. click rate" value={kpis?.avgClickRate.value ?? '—'} trend={kpis?.avgClickRate.trend ?? 0} icon={MousePointerClick} />
         </div>
       </section>
 

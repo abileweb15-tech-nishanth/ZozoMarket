@@ -6,7 +6,7 @@ from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, str_enum
+from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, WorkspaceMixin, str_enum
 
 
 class AutomationStatus(StrEnum):
@@ -41,7 +41,7 @@ class EnrollmentStatus(StrEnum):
     FAILED = "failed"
 
 
-class Automation(UUIDMixin, TimestampMixin, Base):
+class Automation(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "automations"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -62,7 +62,7 @@ class Automation(UUIDMixin, TimestampMixin, Base):
     completed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
-class AutomationEnrollment(UUIDMixin, TimestampMixin, Base):
+class AutomationEnrollment(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "automation_enrollments"
     __table_args__ = (UniqueConstraint("automation_id", "contact_id"),)
 

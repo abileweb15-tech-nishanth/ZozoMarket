@@ -11,11 +11,15 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.automation import Automation, AutomationStatus
 from app.models.base import utcnow
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.contact import Contact, SubscriptionStatus
 from app.models.message import EmailMessage, EmailStatDaily, MessageStatus
+from app.services import mailtrap_stats
+
+# Mailtrap's sending log is one shared mailbox. Only this account's workspace may see it.
+# Every other workspace uses the messages it sent itself.
+_MAIL_STATS_EMAIL = "mnishanthkumar2@gmail.com"
 
 _STAT_COLUMNS = ("sent", "delivered", "opens", "clicks", "bounces", "unsubscribes")
 _CAMPAIGN_COUNTER = {
@@ -39,6 +43,7 @@ async def bump_stats(
     session: AsyncSession,
     campaign_id: str | None,
     *,
+    workspace_id: str | None = None,
     day: dt.date | None = None,
     **increments: int,
 ) -> None:
@@ -51,21 +56,34 @@ async def bump_stats(
         raise ValueError(f"Unknown stat columns: {unknown}")
     day = day or utcnow().date()
     key = campaign_id or ""
+    from app.core.tenancy import current_workspace_id
+
+    wid = workspace_id or current_workspace_id.get()
+    if wid is None and campaign_id:
+        wid = await session.scalar(select(Campaign.workspace_id).where(Campaign.id == campaign_id))
+    if wid is None:
+        return
 
     exists = await session.scalar(
         select(EmailStatDaily.id).where(
-            EmailStatDaily.day == day, EmailStatDaily.campaign_id == key
+            EmailStatDaily.workspace_id == wid,
+            EmailStatDaily.day == day,
+            EmailStatDaily.campaign_id == key,
         )
     )
     if exists is None:
         try:
             async with session.begin_nested():
-                session.add(EmailStatDaily(day=day, campaign_id=key))
+                session.add(EmailStatDaily(workspace_id=wid, day=day, campaign_id=key))
         except IntegrityError:
             pass  # created concurrently; fall through to the UPDATE
     await session.execute(
         update(EmailStatDaily)
-        .where(EmailStatDaily.day == day, EmailStatDaily.campaign_id == key)
+        .where(
+            EmailStatDaily.workspace_id == wid,
+            EmailStatDaily.day == day,
+            EmailStatDaily.campaign_id == key,
+        )
         .values({c: getattr(EmailStatDaily, c) + n for c, n in increments.items()})
     )
     if campaign_id:
@@ -91,7 +109,9 @@ async def record_sent(session: AsyncSession, message: EmailMessage, provider_id:
     message.sent_at = message.delivered_at = now
     # Providers without delivery webhooks are treated as delivered on acceptance; a later
     # bounce webhook reverses this (see record_bounce).
-    await bump_stats(session, message.campaign_id, sent=1, delivered=1)
+    await bump_stats(
+        session, message.campaign_id, workspace_id=message.workspace_id, sent=1, delivered=1
+    )
 
 
 async def record_failure(
@@ -103,7 +123,9 @@ async def record_failure(
         message.status = MessageStatus.BOUNCED
         message.bounce_type = "hard"
         message.bounced_at = now
-        await bump_stats(session, message.campaign_id, sent=1, bounces=1)
+        await bump_stats(
+            session, message.campaign_id, workspace_id=message.workspace_id, sent=1, bounces=1
+        )
     else:
         message.status = MessageStatus.FAILED
 
@@ -118,7 +140,13 @@ async def record_bounce(
     message.bounce_type = bounce_type
     message.bounced_at = utcnow()
     message.error = (reason or "")[:2000] or None
-    await bump_stats(session, message.campaign_id, bounces=1, delivered=-1 if was_delivered else 0)
+    await bump_stats(
+        session,
+        message.campaign_id,
+        workspace_id=message.workspace_id,
+        bounces=1,
+        delivered=-1 if was_delivered else 0,
+    )
     if bounce_type == "hard" and message.contact_id:
         # Protect sender reputation: stop mailing hard-bounced addresses.
         await session.execute(
@@ -146,10 +174,14 @@ async def record_open(session: AsyncSession, message_id: str) -> bool:
         .values(first_opened_at=now)
     )
     if first.rowcount:
-        campaign_id = await session.scalar(
-            select(EmailMessage.campaign_id).where(EmailMessage.id == message_id)
-        )
-        await bump_stats(session, campaign_id, opens=1)
+        row = (
+            await session.execute(
+                select(EmailMessage.campaign_id, EmailMessage.workspace_id).where(
+                    EmailMessage.id == message_id
+                )
+            )
+        ).one()
+        await bump_stats(session, row[0], workspace_id=row[1], opens=1)
     await session.commit()
     return bool(first.rowcount)
 
@@ -167,10 +199,14 @@ async def record_click(session: AsyncSession, message_id: str) -> None:
         .values(first_clicked_at=now)
     )
     if first.rowcount:
-        campaign_id = await session.scalar(
-            select(EmailMessage.campaign_id).where(EmailMessage.id == message_id)
-        )
-        await bump_stats(session, campaign_id, clicks=1)
+        row = (
+            await session.execute(
+                select(EmailMessage.campaign_id, EmailMessage.workspace_id).where(
+                    EmailMessage.id == message_id
+                )
+            )
+        ).one()
+        await bump_stats(session, row[0], workspace_id=row[1], clicks=1)
         await session.commit()
         # A click proves the email was opened even if the tracking pixel was blocked.
         await record_open(session, message_id)
@@ -192,7 +228,9 @@ async def record_unsubscribe(
             campaign_id = await session.scalar(
                 select(EmailMessage.campaign_id).where(EmailMessage.id == message_id)
             )
-        await bump_stats(session, campaign_id, unsubscribes=1)
+        await bump_stats(
+            session, campaign_id, workspace_id=contact.workspace_id, unsubscribes=1
+        )
     await session.commit()
     return True
 
@@ -200,9 +238,26 @@ async def record_unsubscribe(
 # --- Queries ----------------------------------------------------------------------------
 
 
+async def _owns_shared_mailbox(session: AsyncSession) -> bool:
+    from app.core.tenancy import current_workspace_id
+    from app.models.account import User
+
+    workspace_id = current_workspace_id.get()
+    if workspace_id is None:
+        return False
+    owner_workspace = await session.scalar(
+        select(User.workspace_id).where(func.lower(User.email) == _MAIL_STATS_EMAIL)
+    )
+    return owner_workspace == workspace_id
+
+
 async def _daily_totals(
     session: AsyncSession, start: dt.date, end: dt.date, campaign_id: str | None = None
 ) -> dict[dt.date, dict[str, int]]:
+    if campaign_id is None and await _owns_shared_mailbox(session):
+        remote = await mailtrap_stats.daily_counts(start, end)
+        if remote is not None:
+            return remote
     stmt = (
         select(EmailStatDaily.day, *[func.sum(getattr(EmailStatDaily, c)) for c in _STAT_COLUMNS])
         .where(EmailStatDaily.day >= start, EmailStatDaily.day <= end)
@@ -376,21 +431,6 @@ async def dashboard_kpis(session: AsyncSession, window_days: int = 30) -> dict:
         )
         or 0
     )
-    active = (
-        await session.scalar(
-            select(func.count()).where(Automation.status == AutomationStatus.ACTIVE)
-        )
-        or 0
-    )
-    active_new = (
-        await session.scalar(
-            select(func.count()).where(
-                Automation.status == AutomationStatus.ACTIVE, Automation.updated_at >= window_start
-            )
-        )
-        or 0
-    )
-
     rates = {
         "delivery_rate": ("delivered", "sent"),
         "email_open_rate": ("opens", "delivered"),
@@ -404,7 +444,6 @@ async def dashboard_kpis(session: AsyncSession, window_days: int = 30) -> dict:
             subscribed, f"{subscribed:,}", _trend(subscribed, subscribed_before)
         ),
         "scheduled_campaigns": _kpi(scheduled, str(scheduled), float(scheduled_new)),
-        "active_automations": _kpi(active, str(active), float(active_new)),
     }
     for key, (num, den) in rates.items():
         value = rate(cur, num, den)

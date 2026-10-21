@@ -11,13 +11,12 @@ os.environ.update(
         "ENVIRONMENT": "test",
         # A file (not :memory:) so the app and test sessions get separate connections.
         "DATABASE_URL": f"sqlite+aiosqlite:///{_db_path}",
-        "API_KEYS": "test-key",
+        "API_KEYS": "",
         "WEBHOOK_SECRET": "whsec-test",
         "SCHEDULER_ENABLED": "false",
         "SEED_DEMO_DATA": "false",
         "AUTO_CREATE_TABLES": "false",
         "EMAIL_PROVIDER": "console",
-        "AI_PROVIDER": "mock",
         "MEDIA_ROOT": _media_dir,
         "MEDIA_MAX_UPLOAD_MB": "1",
         "PUBLIC_BASE_URL": "http://testserver",
@@ -55,9 +54,18 @@ def outbox() -> ConsoleSender:
 @pytest.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://testserver", headers={"X-API-Key": "test-key"}
-    ) as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/v1/auth/signup",
+            json={
+                "name": "Test User",
+                "email": "test@example.com",
+                "password": "password123",
+                "workspaceName": "Test Workspace",
+            },
+        )
+        assert created.status_code == 201, created.text
+        c.headers["Authorization"] = f"Bearer {created.json()['data']['accessToken']}"
         yield c
 
 

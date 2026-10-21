@@ -6,7 +6,7 @@ from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, str_enum
+from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, WorkspaceMixin, str_enum
 
 
 class CampaignStatus(StrEnum):
@@ -27,7 +27,7 @@ class CampaignType(StrEnum):
 EDITABLE_STATUSES = frozenset({CampaignStatus.DRAFT, CampaignStatus.SCHEDULED})
 
 
-class Campaign(UUIDMixin, TimestampMixin, Base):
+class Campaign(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "campaigns"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)

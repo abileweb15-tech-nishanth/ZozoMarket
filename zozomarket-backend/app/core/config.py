@@ -28,7 +28,10 @@ class Settings(BaseSettings):
 
     # --- Security ---
     SECRET_KEY: SecretStr = SecretStr(_DEFAULT_SECRET)
-    # Comma separated list. When empty, API-key auth is disabled (local development only).
+    ACCESS_TOKEN_MINUTES: int = 60
+    REFRESH_TOKEN_DAYS: int = 14
+    # Optional service keys. The dashboard signs in with a JWT; an empty list does not
+    # open the management API.
     API_KEYS: Annotated[list[str], NoDecode] = Field(default_factory=list)
     WEBHOOK_SECRET: SecretStr | None = None
 
@@ -38,13 +41,13 @@ class Settings(BaseSettings):
     )
 
     # --- Database ---
-    DATABASE_URL: str = f"sqlite+aiosqlite:///{(BASE_DIR / 'zozomarket.db').as_posix()}"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:root@127.0.0.1:5432/zozomarket"
     DATABASE_ECHO: bool = False
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
-    # Convenience for local dev; production should run `alembic upgrade head`.
-    AUTO_CREATE_TABLES: bool = True
-    SEED_DEMO_DATA: bool = True
+    # Production applies schema with `alembic upgrade head` and starts with an empty database.
+    AUTO_CREATE_TABLES: bool = False
+    SEED_DEMO_DATA: bool = False
 
     # --- Background work ---
     TASK_BACKEND: Literal["inline", "celery"] = "inline"
@@ -56,7 +59,7 @@ class Settings(BaseSettings):
     SEND_BATCH_SIZE: int = 200
 
     # --- Email delivery ---
-    EMAIL_PROVIDER: Literal["console", "smtp", "resend"] = "console"
+    EMAIL_PROVIDER: Literal["console", "smtp", "resend", "mailtrap"] = "console"
     EMAIL_FROM_ADDRESS: str = "hello@zozomarket.local"
     EMAIL_FROM_NAME: str = "ZozoMarket"
     SMTP_HOST: str = "localhost"
@@ -64,19 +67,13 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: SecretStr | None = None
     SMTP_USE_TLS: bool = True
+    MAILTRAP_API_TOKEN: SecretStr | None = None
+    MAILTRAP_ACCOUNT_ID: int | None = None
+    MAILTRAP_SENDER_EMAIL: str = "hello@demomailtrap.co"
+    MAILTRAP_SENDER_NAME: str = "Mailtrap Test"
+    MAILTRAP_CATEGORY: str = "Integration Test"
     RESEND_API_KEY: SecretStr | None = None
     EMAIL_TRACKING_ENABLED: bool = True
-
-    # --- AI copywriter ---
-    AI_PROVIDER: Literal["mock", "openai", "anthropic"] = "mock"
-    AI_FALLBACK_TO_MOCK: bool = True
-    AI_TIMEOUT_SECONDS: float = 30.0
-    OPENAI_API_KEY: SecretStr | None = None
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    ANTHROPIC_API_KEY: SecretStr | None = None
-    ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
-    ANTHROPIC_BASE_URL: str = "https://api.anthropic.com/v1"
 
     # --- Media ---
     MEDIA_ROOT: Path = BASE_DIR / "storage" / "media"
@@ -100,6 +97,8 @@ class Settings(BaseSettings):
             value = "postgresql+asyncpg://" + value.removeprefix("postgresql://")
         if value.startswith("sqlite:///"):
             value = "sqlite+aiosqlite:///" + value.removeprefix("sqlite:///")
+        if value.startswith("mysql://"):
+            value = "mysql+asyncmy://" + value.removeprefix("mysql://")
         return value
 
     @model_validator(mode="after")
@@ -107,8 +106,12 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production":
             if self.SECRET_KEY.get_secret_value() == _DEFAULT_SECRET:
                 raise ValueError("SECRET_KEY must be set in production")
-            if not self.API_KEYS:
-                raise ValueError("API_KEYS must be set in production")
+            if self.SEED_DEMO_DATA:
+                raise ValueError("SEED_DEMO_DATA must be false in production")
+            if self.AUTO_CREATE_TABLES:
+                raise ValueError("AUTO_CREATE_TABLES must be false in production")
+            if "localhost" in self.PUBLIC_BASE_URL or "127.0.0.1" in self.PUBLIC_BASE_URL:
+                raise ValueError("PUBLIC_BASE_URL must be the public API address in production")
         return self
 
     @property

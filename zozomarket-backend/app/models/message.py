@@ -7,7 +7,7 @@ from sqlalchemy import Date, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, str_enum
+from app.models.base import TimestampMixin, UTCDateTime, UUIDMixin, WorkspaceMixin, str_enum
 
 
 class MessageStatus(StrEnum):
@@ -18,7 +18,7 @@ class MessageStatus(StrEnum):
     FAILED = "failed"
 
 
-class EmailMessage(UUIDMixin, TimestampMixin, Base):
+class EmailMessage(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     """One email to one contact. The unique constraint makes campaign dispatch idempotent."""
 
     __tablename__ = "email_messages"
@@ -51,11 +51,15 @@ class EmailMessage(UUIDMixin, TimestampMixin, Base):
     click_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
-class EmailStatDaily(UUIDMixin, Base):
+class EmailStatDaily(UUIDMixin, WorkspaceMixin, Base):
     """Pre-aggregated counters per day (and campaign) so analytics never scans messages."""
 
     __tablename__ = "email_stats_daily"
-    __table_args__ = (UniqueConstraint("day", "campaign_id", name="uq_email_stats_daily_day"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "day", "campaign_id", name="uq_email_stats_daily_workspace_day"
+        ),
+    )
 
     day: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     # Not a FK: "" buckets non-campaign mail, and history survives campaign deletion.

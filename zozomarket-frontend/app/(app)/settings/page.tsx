@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,10 +8,14 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { PageHeader, Panel, NativeSelect, StatusBadge } from '@/components/app/shared'
+import { api, type WorkspaceSettings } from '@/lib/api'
+import { loadUser, saveSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
-const sections = ['Workspace Profile', 'Brand Settings', 'Team Members', 'Notifications', 'Email Sending Defaults', 'Social Publishing Preferences', 'Security', 'API Configuration'] as const
-type S = (typeof sections)[number]
+const sections = ['Workspace Profile', 'Brand Settings', 'Team', 'Email Sending Defaults'] as const
+type Section = (typeof sections)[number]
+const timezones = ['UTC', 'Asia/Kolkata', 'America/New_York', 'America/Los_Angeles', 'Europe/London']
+const fonts = ['Inter', 'Georgia', 'Helvetica', 'Arial']
 
 function Field({ id, label, help, children }: { id: string; label: string; help?: string; children: React.ReactNode }) {
   return (
@@ -22,99 +26,130 @@ function Field({ id, label, help, children }: { id: string; label: string; help?
     </div>
   )
 }
-function Toggle({ label, help, defaultOn = false }: { label: string; help?: string; defaultOn?: boolean }) {
-  const [on, setOn] = useState(defaultOn)
-  return (
-    <div className="flex items-start justify-between gap-4 py-2">
-      <div><p className="text-sm font-medium">{label}</p>{help && <p className="text-xs text-muted-foreground">{help}</p>}</div>
-      <Switch checked={on} onCheckedChange={setOn} aria-label={label} />
-    </div>
-  )
-}
 
-function Body({ s }: { s: S }) {
-  const [tz, setTz] = useState('America/New_York')
-  const [font, setFont] = useState('Inter')
-  const [tzSocial, setTzSocial] = useState('Best time (recommended)')
-  const [role, setRole] = useState('Editor')
-  switch (s) {
-    case 'Workspace Profile': return <>
-      <Field id="ws-name" label="Workspace name"><Input id="ws-name" defaultValue="Acme Coffee Co." required /></Field>
-      <Field id="ws-url" label="Website" help="Used in email footers and link tracking."><Input id="ws-url" type="url" defaultValue="https://acme.coffee" /></Field>
-      <Field id="ws-tz" label="Time zone"><NativeSelect label="Time zone" value={tz} onChange={setTz} options={['America/New_York', 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo']} /></Field>
-      <Field id="ws-addr" label="Physical mailing address" help="Required by anti-spam laws in every marketing email."><Textarea id="ws-addr" defaultValue="12 Market St, Portland, OR 97201" /></Field>
-    </>
-    case 'Brand Settings': return <>
-      <Field id="b-color" label="Primary brand color"><Input id="b-color" type="color" defaultValue="#f59e0b" className="w-24 p-1" /></Field>
-      <Field id="b-font" label="Default font"><NativeSelect label="Default font" value={font} onChange={setFont} options={['Inter', 'Georgia', 'Helvetica', 'Arial']} /></Field>
-      <Field id="b-logo" label="Logo" help="PNG or SVG, at least 200px wide."><Input id="b-logo" type="file" accept="image/*" /></Field>
-    </>
-    case 'Team Members': return <>
-      <ul className="divide-y divide-border rounded-lg border border-border">
-        {[['Jamie Doe', 'jamie@acme.coffee', 'Owner'], ['Riley Chen', 'riley@acme.coffee', 'Admin'], ['Sam Ortiz', 'sam@acme.coffee', 'Editor']].map(([n, e, r]) => (
-          <li key={e} className="flex items-center gap-3 p-3 text-sm"><span className="flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground" aria-hidden>{n.split(' ').map((x) => x[0]).join('')}</span><div className="flex-1"><p className="font-medium">{n}</p><p className="text-xs text-muted-foreground">{e}</p></div><StatusBadge status={r} /></li>
-        ))}
-      </ul>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="flex-1"><Field id="invite" label="Invite by email"><Input id="invite" type="email" placeholder="teammate@company.com" /></Field></div>
-        <NativeSelect label="Role" value={role} onChange={setRole} options={['Admin', 'Editor', 'Viewer']} />
-        <Button variant="outline" onClick={() => toast.success('Invitation sent (simulated)')}>Invite</Button>
-      </div>
-    </>
-    case 'Notifications': return <>
-      <Toggle label="Campaign sent" help="Email me when a campaign finishes sending." defaultOn />
-      <Toggle label="Post published or failed" defaultOn />
-      <Toggle label="Weekly performance digest" defaultOn />
-      <Toggle label="New contact signups" />
-    </>
-    case 'Email Sending Defaults': return <>
-      <Field id="from-name" label="Default from name"><Input id="from-name" defaultValue="Acme Coffee Co." /></Field>
-      <Field id="from-email" label="Default from email" help="Must belong to a verified sending domain."><Input id="from-email" type="email" defaultValue="hello@mail.acme.coffee" /></Field>
-      <Field id="reply" label="Reply-to address"><Input id="reply" type="email" defaultValue="support@acme.coffee" /></Field>
-      <Toggle label="Track opens" defaultOn />
-      <Toggle label="Track link clicks" defaultOn />
-    </>
-    case 'Social Publishing Preferences': return <>
-      <Field id="post-time" label="Default scheduling"><NativeSelect label="Default scheduling" value={tzSocial} onChange={setTzSocial} options={['Best time (recommended)', 'Fixed time: 9:00 AM', 'Publish immediately']} /></Field>
-      <Toggle label="Require approval before publishing" help="Editors' posts need an admin to approve." />
-      <Toggle label="Auto-shorten links" defaultOn />
-    </>
-    case 'Security': return <>
-      <Toggle label="Require two-factor authentication" help="Applies to all team members." defaultOn />
-      <Toggle label="Single sign-on (SSO)" help="Available on Enterprise plans." />
-      <Field id="session" label="Session timeout (minutes)"><Input id="session" type="number" min={15} defaultValue={60} /></Field>
-    </>
-    case 'API Configuration': return <>
-      <Field id="api-key" label="Live API key" help="Keys are mock values in this prototype."><Input id="api-key" readOnly value="zm_live_••••••••••••3f9a" className="font-mono" /></Field>
-      <Field id="api-hook" label="Webhook URL"><Input id="api-hook" type="url" placeholder="https://example.com/webhooks" /></Field>
-      <Button variant="outline" className="w-fit" onClick={() => toast.success('New key generated (mock)')}>Regenerate key</Button>
-    </>
-  }
+function rememberName(name: string) {
+  const user = loadUser()
+  const accessToken = localStorage.getItem('zozo.accessToken')
+  const refreshToken = localStorage.getItem('zozo.refreshToken')
+  if (!user || !accessToken || !refreshToken) return
+  saveSession({
+    accessToken,
+    refreshToken,
+    tokenType: 'bearer',
+    expiresIn: 0,
+    user: { ...user, workspaceName: name },
+  })
 }
 
 export default function SettingsPage() {
-  const [s, setS] = useState<S>('Workspace Profile')
+  const [section, setSection] = useState<Section>('Workspace Profile')
+  const [workspace, setWorkspace] = useState<WorkspaceSettings | null>(null)
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    api.workspace.get()
+      .then(setWorkspace)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load the workspace'))
+  }, [])
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!workspace) return
+    setPending(true)
+    try {
+      const saved = await api.workspace.update({
+        name: workspace.name,
+        website: workspace.website,
+        timezone: workspace.timezone,
+        mailingAddress: workspace.mailingAddress,
+        brandColor: workspace.brandColor,
+        font: workspace.font,
+        fromName: workspace.fromName,
+        fromEmail: workspace.fromEmail,
+        replyTo: workspace.replyTo,
+        trackOpens: workspace.trackOpens,
+        trackClicks: workspace.trackClicks,
+      })
+      setWorkspace(saved)
+      rememberName(saved.name)
+      toast.success('Workspace saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save the workspace')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const patch = (next: Partial<WorkspaceSettings>) => setWorkspace((current) => current ? { ...current, ...next } : current)
+
   return (
     <div>
-      <PageHeader title="Workspace Settings" description="Configure your workspace, brand, and team." />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
-        <nav aria-label="Settings sections">
-          <ul className="flex gap-1 overflow-x-auto lg:flex-col">
-            {sections.map((x) => (
-              <li key={x}>
-                <button type="button" aria-current={s === x ? 'page' : undefined} onClick={() => setS(x)}
-                  className={cn('h-9 w-full rounded-lg px-3 text-left text-sm whitespace-nowrap focus-visible:outline-2 focus-visible:outline-ring', s === x ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground')}>{x}</button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <Panel title={s}>
-          <form key={s} className="flex max-w-xl flex-col gap-5" onSubmit={(e) => { e.preventDefault(); toast.success(`${s} saved`) }}>
-            <Body s={s} />
-            <div className="border-t border-border pt-4"><Button type="submit">Save Changes</Button></div>
-          </form>
-        </Panel>
-      </div>
+      <PageHeader title="Workspace Settings" description="The profile, brand, and sending defaults for this workspace." />
+      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+      {!workspace && !error && <p className="text-sm text-muted-foreground">Loading workspace…</p>}
+      {workspace && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
+          <nav aria-label="Settings sections">
+            <ul className="flex gap-1 overflow-x-auto lg:flex-col">
+              {sections.map((item) => (
+                <li key={item}>
+                  <button type="button" aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}
+                    className={cn('h-9 w-full rounded-lg px-3 text-left text-sm whitespace-nowrap focus-visible:outline-2 focus-visible:outline-ring', section === item ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground')}>{item}</button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <Panel title={section}>
+            <form className="flex max-w-xl flex-col gap-5" onSubmit={save}>
+              {section === 'Workspace Profile' && <>
+                <Field id="ws-name" label="Workspace name"><Input id="ws-name" value={workspace.name} required onChange={(e) => patch({ name: e.target.value })} /></Field>
+                <Field id="ws-url" label="Website" help="Used in email footers and link tracking."><Input id="ws-url" type="url" value={workspace.website ?? ''} onChange={(e) => patch({ website: e.target.value })} /></Field>
+                <Field id="ws-tz" label="Time zone"><NativeSelect label="Time zone" value={workspace.timezone} onChange={(value) => patch({ timezone: value })} options={timezones} /></Field>
+                <Field id="ws-addr" label="Physical mailing address" help="Required by anti-spam laws in every marketing email."><Textarea id="ws-addr" value={workspace.mailingAddress} onChange={(e) => patch({ mailingAddress: e.target.value })} /></Field>
+              </>}
+              {section === 'Brand Settings' && <>
+                <Field id="b-color" label="Primary brand color"><Input id="b-color" type="color" value={workspace.brandColor} className="w-24 p-1" onChange={(e) => patch({ brandColor: e.target.value })} /></Field>
+                <Field id="b-font" label="Default font"><NativeSelect label="Default font" value={workspace.font} onChange={(value) => patch({ font: value })} options={fonts} /></Field>
+                <Field id="b-logo" label="Logo" help="PNG, JPEG, GIF, or WebP. The file is stored on the server.">
+                  {workspace.logoUrl && <img src={workspace.logoUrl} alt="Workspace logo" className="mb-2 h-16 w-auto rounded-md border border-border object-contain" />}
+                  <Input id="b-logo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setPending(true)
+                    try {
+                      const saved = await api.workspace.uploadLogo(file)
+                      setWorkspace(saved)
+                      toast.success('Logo saved')
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Could not upload the logo')
+                    } finally {
+                      setPending(false)
+                    }
+                  }} />
+                </Field>
+              </>}
+              {section === 'Team' && (
+                <ul className="divide-y divide-border rounded-lg border border-border">
+                  <li className="flex items-center gap-3 p-3 text-sm">
+                    <span className="flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground" aria-hidden>{workspace.ownerName.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span>
+                    <div className="flex-1"><p className="font-medium">{workspace.ownerName}</p><p className="text-xs text-muted-foreground">{workspace.ownerEmail}</p></div>
+                    <StatusBadge status="Owner" />
+                  </li>
+                </ul>
+              )}
+              {section === 'Email Sending Defaults' && <>
+                <Field id="from-name" label="Default from name"><Input id="from-name" value={workspace.fromName} onChange={(e) => patch({ fromName: e.target.value })} /></Field>
+                <Field id="from-email" label="Default from email" help="Must belong to a verified sending domain before live mail is turned on."><Input id="from-email" type="email" value={workspace.fromEmail ?? ''} onChange={(e) => patch({ fromEmail: e.target.value })} /></Field>
+                <Field id="reply" label="Reply-to address"><Input id="reply" type="email" value={workspace.replyTo ?? ''} onChange={(e) => patch({ replyTo: e.target.value })} /></Field>
+                <div className="flex items-center justify-between gap-4"><p className="text-sm font-medium">Track opens</p><Switch checked={workspace.trackOpens} onCheckedChange={(on) => patch({ trackOpens: on })} aria-label="Track opens" /></div>
+                <div className="flex items-center justify-between gap-4"><p className="text-sm font-medium">Track link clicks</p><Switch checked={workspace.trackClicks} onCheckedChange={(on) => patch({ trackClicks: on })} aria-label="Track link clicks" /></div>
+              </>}
+              {section !== 'Team' && <div className="border-t border-border pt-4"><Button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save Changes'}</Button></div>}
+            </form>
+          </Panel>
+        </div>
+      )}
     </div>
   )
 }

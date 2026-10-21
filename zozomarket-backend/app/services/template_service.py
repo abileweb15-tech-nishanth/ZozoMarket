@@ -19,6 +19,7 @@ from app.services.query import ilike, paginate
 
 MERGE_TAG = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 _COLOR = re.compile(r"^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20})$")
+_FONT = re.compile(r"^[A-Za-z0-9 ,\-]{1,64}$")
 _SAFE_URL = re.compile(r"^(https?://|mailto:|/|\{\{)", re.IGNORECASE)
 
 SAMPLE_VARIABLES: dict[str, str] = {
@@ -73,6 +74,11 @@ def _color(value: Any, default: str) -> str:
     return value if _COLOR.match(value) else default
 
 
+def _font(value: Any) -> str:
+    value = str(value or "").strip()
+    return value if _FONT.match(value) else "Arial,Helvetica,sans-serif"
+
+
 def _url(value: Any) -> str:
     value = str(value or "").strip()
     return html_lib.escape(value, quote=True) if value and _SAFE_URL.match(value) else "#"
@@ -80,6 +86,14 @@ def _url(value: Any) -> str:
 
 def _text(value: Any) -> str:
     return html_lib.escape(str(value or "")).replace("\n", "<br>")
+
+
+def _px(value: Any, default: int, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(number, high))
 
 
 def _block_html(block: Mapping[str, Any]) -> str:
@@ -92,30 +106,44 @@ def _block_html(block: Mapping[str, Any]) -> str:
     color = _color(block.get("color"), "#1f2937")
     bg = _color(block.get("bg"), "#ffffff")
     text = _text(block.get("text"))
+    family = _font(block.get("font"))
     cell = (
         f"padding:{padding}px;text-align:{align};color:{color};background-color:{bg};"
-        f"font-size:{size}px;font-family:Arial,Helvetica,sans-serif;line-height:1.5;"
+        f"font-size:{size}px;font-family:{family};line-height:1.5;"
     )
 
     if kind == "spacer":
         return f'<tr><td style="height:{padding}px;line-height:{padding}px;">&nbsp;</td></tr>'
     if kind == "image":
         src = _url(block.get("image"))
+        width = _px(block.get("width"), 600, 40, 600)
         return (
-            f'<tr><td style="padding:0;background-color:{bg};">'
-            f'<img src="{src}" alt="{text}" width="600" '
-            f'style="display:block;width:100%;max-width:600px;height:auto;border:0;"></td></tr>'
+            f'<tr><td style="padding:{padding}px;text-align:{align};background-color:{bg};">'
+            f'<img src="{src}" alt="{text}" width="{width}" '
+            f'style="display:inline-block;width:{width}px;max-width:100%;height:auto;border:0;">'
+            "</td></tr>"
+        )
+    if kind == "logo" and block.get("image"):
+        src = _url(block.get("image"))
+        width = _px(block.get("width"), 160, 40, 320)
+        return (
+            f'<tr><td style="{cell}"><img src="{src}" alt="{text}" width="{width}" '
+            f'style="display:inline-block;width:{width}px;max-width:100%;height:auto;border:0;">'
+            "</td></tr>"
         )
     if kind == "button":
+        btn_bg = bg if bg.lower() not in {"#fff", "#ffffff"} else "#4f46e5"
         return (
-            f'<tr><td style="{cell}"><a href="{_url(block.get("link"))}" '
+            f'<tr><td style="padding:{padding}px;text-align:{align};background-color:#ffffff;'
+            f'font-family:{family};">'
+            f'<a href="{_url(block.get("link"))}" '
             f'style="display:inline-block;padding:12px 22px;border-radius:6px;'
-            f'background-color:#4f46e5;color:#ffffff;font-weight:bold;text-decoration:none;">'
-            f"{text}</a></td></tr>"
+            f"background-color:{btn_bg};color:{color};font-weight:bold;text-decoration:none;"
+            f'font-family:{family};font-size:{size}px;">{text}</a></td></tr>'
         )
     if kind == "divider":
         return (
-            f'<tr><td style="{cell}"><hr style="border:0;border-top:1px solid #e5e7eb;margin:0;">'
+            f'<tr><td style="{cell}"><hr style="border:0;border-top:1px solid {color};margin:0;">'
             "</td></tr>"
         )
     if kind == "columns":
@@ -128,16 +156,25 @@ def _block_html(block: Mapping[str, Any]) -> str:
         )
     if kind == "product":
         src = _url(block.get("image"))
+        width = _px(block.get("width"), 80, 40, 240)
         return (
             f'<tr><td style="{cell}text-align:left;"><table role="presentation" cellpadding="0" '
             f'cellspacing="0"><tr><td style="padding-right:16px;"><img src="{src}" alt="" '
-            f'width="80" height="80" style="display:block;border-radius:6px;"></td>'
+            f'width="{width}" style="display:block;width:{width}px;max-width:100%;height:auto;'
+            f'border-radius:6px;"></td>'
             f'<td style="font-weight:bold;">{text}</td></tr></table></td></tr>'
         )
     if kind == "heading":
         return (
             f'<tr><td style="{cell}"><h2 style="margin:0;font-size:{size}px;">{text}</h2></td></tr>'
         )
+    if kind == "footer":
+        link = (
+            '<a href="{{unsubscribe_url}}" style="color:#6b7280;text-decoration:underline;">'
+            "Unsubscribe</a>"
+        )
+        body = text if "unsubscribe_url" in str(block.get("text") or "") else f"{text}<br>{link}"
+        return f'<tr><td style="{cell}">{body}</td></tr>'
     weight = "font-weight:bold;" if kind in ("logo", "banner") else ""
     return f'<tr><td style="{cell}{weight}">{text}</td></tr>'
 
@@ -159,8 +196,47 @@ def ensure_preheader(markup: str, preheader: str) -> str:
     return markup[: match.end()] + _preheader_div(preheader) + markup[match.end() :]
 
 
+def _unsubscribe_row() -> str:
+    return (
+        '<tr><td style="padding:16px;text-align:center;color:#6b7280;font-size:12px;'
+        'font-family:Arial,Helvetica,sans-serif;">'
+        '<a href="{{unsubscribe_url}}" style="color:#6b7280;text-decoration:underline;">'
+        "Unsubscribe</a></td></tr>"
+    )
+
+
+def brand_blocks(blocks: Sequence[Mapping[str, Any]], workspace: Any) -> list[dict[str, Any]]:
+    """Logo and footer follow the workspace profile. The rest of the design is unchanged."""
+    if workspace is None:
+        return [dict(block) for block in blocks]
+    name = getattr(workspace, "name", "") or ""
+    brand_name = (getattr(workspace, "from_name", None) or "").strip() or name
+    address = (getattr(workspace, "mailing_address", None) or "").strip()
+    place = address or name
+    branded: list[dict[str, Any]] = []
+    for raw in blocks:
+        block = dict(raw)
+        kind = block.get("type")
+        if kind == "logo":
+            if brand_name:
+                block["text"] = brand_name
+            if getattr(workspace, "brand_color", None):
+                block["color"] = workspace.brand_color
+            if getattr(workspace, "font", None):
+                block["font"] = workspace.font
+            if getattr(workspace, "logo_url", None):
+                block["image"] = workspace.logo_url
+        elif kind == "footer" and place:
+            block["text"] = f"{place} · {{{{unsubscribe_url}}}}"
+        branded.append(block)
+    return branded
+
+
 def render_blocks(blocks: Sequence[Mapping[str, Any]], preheader: str = "") -> str:
-    rows = "\n".join(_block_html(b) for b in blocks)
+    rendered = [_block_html(b) for b in blocks]
+    if not any("unsubscribe_url" in row for row in rendered):
+        rendered.append(_unsubscribe_row())
+    rows = "\n".join(rendered)
     hidden = _preheader_div(preheader) if preheader else ""
     return (
         '<!DOCTYPE html><html><head><meta charset="utf-8">'

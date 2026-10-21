@@ -10,10 +10,9 @@ import {
   MailCheck,
   MailOpen,
   MousePointerClick,
-  Sparkles,
   Users,
-  Workflow,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader, KpiCard, Panel, StatusBadge, TableWrap, th, td } from '@/components/app/shared'
 import { TrendChart, BarsChart, C } from '@/components/app/charts'
@@ -32,27 +31,28 @@ export default function DashboardPage() {
   const [emailPerf, setEmailPerf] = useState<EmailPerformancePoint[]>([])
 
   useEffect(() => {
-    api.dashboard.getKPIs().then(setKpis)
-    api.campaigns.list().then(setCampaigns)
-    api.calendar.list().then(setCalendar)
-    api.analytics.getEmailPerformance().then(setEmailPerf)
+    const fail = (err: Error) => toast.error(err.message)
+    api.dashboard.getKPIs().then(setKpis).catch(fail)
+    api.campaigns.list().then(setCampaigns).catch(fail)
+    api.calendar.list().then(setCalendar).catch(fail)
+    api.analytics.getEmailPerformance().then(setEmailPerf).catch(fail)
   }, [])
 
-  const sentCampaigns = campaigns.filter((c) => c.open !== null)
-  const upcomingEvents = calendar.filter((e) => e.status !== 'Sent').slice(0, 5)
+  const sentCampaigns = campaigns.filter((c) => c.status === 'Sent')
+  const upcomingEvents = calendar.filter((e) => e.status === 'Scheduled').slice(0, 5)
+  const counts = {
+    Draft: campaigns.filter((c) => c.status === 'Draft').length,
+    Scheduled: campaigns.filter((c) => c.status === 'Scheduled').length,
+    Sent: sentCampaigns.length,
+  }
 
   return (
     <div>
       <PageHeader
         title="Email Marketing Dashboard"
-        description="Monitor delivery, open rates, subscriber engagement, and scheduled broadcasts."
+        description="Campaigns, delivery, and scheduled mail for this workspace."
         actions={
           <div className="flex items-center gap-2">
-            <Link href="/ai-assistant">
-              <Button variant="outline">
-                <Sparkles /> AI Assistant
-              </Button>
-            </Link>
             <Link href="/email/builder">
               <Button>
                 <Mail /> Create Campaign
@@ -61,6 +61,15 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        {(['Draft', 'Scheduled', 'Sent'] as const).map((label) => (
+          <Link key={label} href="/email/campaigns" className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="text-2xl font-semibold tabular-nums">{counts[label]}</p>
+          </Link>
+        ))}
+      </div>
 
       {/* KPI cards */}
       {kpis && (
@@ -101,12 +110,6 @@ export default function DashboardPage() {
             trend={kpis.scheduledCampaigns.trend}
             icon={CalendarDays}
           />
-          <KpiCard
-            label="Active automations"
-            value={kpis.activeAutomations.value}
-            trend={kpis.activeAutomations.trend}
-            icon={Workflow}
-          />
         </div>
       )}
 
@@ -114,7 +117,7 @@ export default function DashboardPage() {
       <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel
           title="Email trend"
-          description="Delivered, opens & clicks over 6 weeks"
+          description="Delivered, opens, and clicks for mail already sent"
         >
           <TrendChart
             data={emailPerf}
@@ -133,10 +136,10 @@ export default function DashboardPage() {
           description="Open vs click rate (%)"
         >
           <BarsChart
-            data={sentCampaigns.map((c) => ({
+            data={campaigns.slice(0, 6).map((c) => ({
               name: c.name.split(' ').slice(0, 2).join(' '),
-              open: c.open,
-              click: c.click,
+              open: c.open ?? 0,
+              click: c.click ?? 0,
             }))}
             x="name"
             series={[
@@ -165,7 +168,7 @@ export default function DashboardPage() {
             <table className="w-full">
               <thead className="border-b border-border bg-muted">
                 <tr>
-                  {['Campaign', 'Audience', 'Status', 'Open Rate', 'Click Rate'].map((h) => (
+                  {['Campaign', 'Subject', 'Status', 'Open Rate', 'Click Rate'].map((h) => (
                     <th key={h} scope="col" className={th}>
                       {h}
                     </th>
@@ -176,7 +179,7 @@ export default function DashboardPage() {
                 {campaigns.slice(0, 5).map((c) => (
                   <tr key={c.id}>
                     <td className={`${td} font-medium`}>{c.name}</td>
-                    <td className={td}>{c.audience}</td>
+                    <td className={td}>{c.subject || '—'}</td>
                     <td className={td}>
                       <StatusBadge status={c.status} />
                     </td>
@@ -186,6 +189,7 @@ export default function DashboardPage() {
                 ))}
               </tbody>
             </table>
+            {campaigns.length === 0 && <p className="px-4 py-6 text-sm text-muted-foreground">No campaigns in this workspace yet.</p>}
           </TableWrap>
         </Panel>
 

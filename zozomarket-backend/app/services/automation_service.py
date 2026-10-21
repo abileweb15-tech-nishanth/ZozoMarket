@@ -218,6 +218,7 @@ async def enroll(
             async with session.begin_nested():
                 session.add(
                     AutomationEnrollment(
+                        workspace_id=automation.workspace_id,
                         automation_id=automation.id,
                         contact_id=contact_id,
                         next_run_at=now,
@@ -296,6 +297,7 @@ async def _send_node_email(
             html = html or template_html(template)
             subject = subject or template.subject
     message = EmailMessage(
+        workspace_id=automation.workspace_id,
         automation_id=automation.id,
         contact_id=contact.id,
         to_email=contact.email,

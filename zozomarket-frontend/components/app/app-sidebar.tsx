@@ -19,7 +19,6 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex items-center gap-2">
           <Logo />
           <span className="text-base font-semibold tracking-tight">ZozoMarket</span>
-          <span className="ml-auto rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">Pro Plan</span>
         </div>
         <CreateNewMenu fullWidth />
       </div>

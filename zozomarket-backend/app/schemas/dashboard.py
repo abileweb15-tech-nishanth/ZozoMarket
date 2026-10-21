@@ -18,7 +18,6 @@ class DashboardKPIs(CamelModel):
     avg_click_rate: KPI
     total_subscribers: KPI
     scheduled_campaigns: KPI
-    active_automations: KPI
 
 
 class DashboardData(CamelModel):

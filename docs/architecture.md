@@ -1,22 +1,22 @@
 # ZozoMarket System Architecture
 
 ## Overview
-ZozoMarket is an integrated marketing SaaS application delivering unified Email and Social Media marketing management.
+ZozoMarket is an enterprise-grade marketing SaaS application focused on automated, high-converting Email Marketing.
 
 ## Architecture Blueprint
 
-```
+```text
 +-------------------------------------------------------------------------------+
-|                               ZozoMarket Client                               |
+|                        ZozoMarket Client (Next.js 16)                         |
 |                                                                               |
 |  +-------------------------------------------------------------------------+  |
 |  |                           Next.js App Router                            |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
-|  |  |   Dashboard & KPI  |  |   Email Marketing    |  |  Social Media   |  |  |
+|  |  |   Dashboard & KPI  |  |   Email Campaigns    |  |  Email Builder  |  |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
-|  |  |   Contacts & CRM   |  |  Forms & Lead Gen    |  |  AI Assistant   |  |  |
+|  |  |   Contacts & CRM   |  |  Forms & Lead Gen    |  |  Media Library  |  |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
-|  |  |  Unified Calendar  |  |  Cross-Analytics     |  | Media Library   |  |  |
+|  |  | Campaign Calendar  |  | Deliverability Stats |  | Workspace       |  |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
 |  +-------------------------------------------------------------------------+  |
 |                                     |                                         |
@@ -24,28 +24,51 @@ ZozoMarket is an integrated marketing SaaS application delivering unified Email 
 |  |                      UI Layer (Components & Design)                     |  |
 |  |  - components/app: Domain widgets (AppSidebar, AppHeader, Charts, Panel)|  |
 |  |  - components/ui:  Atoms & Primitives (Button, Dialog, Table, Input)    |  |
-|  |  - Tailwind CSS v4 + next-themes (OKLCH palette & Theme Variables)      |  |
+|  |  - Tailwind CSS v4 + next-themes (Light & Dark theme variables)         |  |
 |  +-------------------------------------------------------------------------+  |
 |                                     |                                         |
 |  +-------------------------------------------------------------------------+  |
 |  |                    Data Layer (Decoupled Client API)                    |  |
-|  |  - lib/api.ts: Async REST Client service interface                      |  |
-|  |  - Browser LocalStorage persistence                                     |  |
-|  |  - data/marketing-data.json: Structured mock dataset                    |  |
+|  |  - lib/api.ts: REST client for the FastAPI /api/v1 routes               |  |
+|  |  - JWT session in the browser; rows come from PostgreSQL                |  |
 |  +-------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------+
                                       |
-                           (Future API Integration)
+                         (REST API: http://localhost:8000)
                                       |
                                       v
 +-------------------------------------------------------------------------------+
-|                           ZozoMarket Python Backend                           |
-|  - FastAPI REST Endpoints                                                     |
-|  - SQLAlchemy / PostgreSQL Database                                           |
-|  - AI Agent Integrations (LLM orchestration)                                  |
-|  - Background Job Workers (Celery / Redis)                                    |
+|                      ZozoMarket Python Backend (FastAPI)                      |
+|                                                                               |
+|  +-------------------------------------------------------------------------+  |
+|  |                      FastAPI REST Routers (/api/v1)                     |  |
+|  |  - /auth, /workspace: Account, brand, and sending identity              |  |
+|  |  - /dashboard, /analytics: KPIs; Mailtrap stats when that provider is on|  |
+|  |  - /campaigns, /templates: Builder HTML, schedule, test, and dispatch   |  |
+|  |  - /contacts, /forms, /media, /calendar                             |  |
+|  |  - /t/* and /webhooks/email: Opens, clicks, unsubscribe, bounces        |  |
+|  +-------------------------------------------------------------------------+  |
+|                                     |                                         |
+|  +-------------------------------------------------------------------------+  |
+|  |                           Service Layer                                 |  |
+|  |  - campaign, template, contact, form, media, workspace                  |  |
+|  |  - email_service.py: console, smtp, resend, mailtrap                    |  |
+|  |  - analytics_service.py and mailtrap_stats.py: local and Mailtrap totals|  |
+|  +-------------------------------------------------------------------------+  |
+|                                     |                                         |
+|  +-------------------------------------------------------------------------+  |
+|  |                     Database & Background Workers                       |  |
+|  |  - Database: PostgreSQL (asyncpg). SQLite is used only by the test suite |  |
+|  |  - Workers: Asyncio in-process scheduler (dev) / Celery + Redis (prod)  |  |
+|  +-------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------+
 ```
 
 ## Detailed Documentation
-For detailed frontend file maps and directory explanations, refer to [docs/frontend.md](./frontend.md).
+- Backend services, endpoints, schemas, and tests: [docs/backend.md](./backend.md).
+- Frontend guide: [docs/frontend.md](./frontend.md).
+- Decisions: [docs/decisions.md](./decisions.md).
+- Verified bug fixes: [docs/error-log.md](./error-log.md).
+
+## Documentation and test workflow
+Any change to API behavior, a schema, a service, or a test updates [docs/backend.md](./backend.md) in the same change, including the test map. Frontend structure changes update [docs/frontend.md](./frontend.md). Run the relevant pytest files and record the command and result. Do not mark a test as passed unless it ran.

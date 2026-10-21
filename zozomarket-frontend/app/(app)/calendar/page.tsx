@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader, Panel, StatusBadge, NativeSelect, Segmented, EmptyState } from '@/components/app/shared'
 import { api, type CalendarEvent } from '@/lib/api'
@@ -21,7 +22,7 @@ export default function CalendarPage() {
   const [typeFilter, setTypeFilter] = useState<(typeof typeFilters)[number]>('All Types')
 
   useEffect(() => {
-    api.calendar.list().then(setEvents)
+    api.calendar.list().then(setEvents).catch((err: Error) => toast.error(err.message))
   }, [])
 
   const filtered = useMemo(() => {
@@ -174,7 +175,7 @@ export default function CalendarPage() {
             <EmptyState
               icon={CalendarDays}
               title="No email campaigns scheduled"
-              description="There are no broadcasts or automations scheduled for this period."
+              description="There are no campaigns scheduled for this period."
             />
           ) : (
             <div className="divide-y divide-border">

@@ -16,7 +16,10 @@ from app.core import database
 from app.core.config import settings
 from app.core.exceptions import error_response, register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.tenancy import install_tenant_filter
 from app.workers.scheduler import Scheduler
+
+install_tenant_filter()
 
 configure_logging()
 logger = logging.getLogger("app")
@@ -26,18 +29,12 @@ logger = logging.getLogger("app")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.AUTO_CREATE_TABLES:
         await database.create_all()
-    if settings.SEED_DEMO_DATA:
-        from app.services.seed import seed_demo_data
-
-        async with database.SessionLocal() as session:
-            await seed_demo_data(session)
     settings.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
     scheduler = Scheduler()
     if settings.SCHEDULER_ENABLED and settings.TASK_BACKEND == "inline":
         scheduler.start()
-    if not settings.auth_enabled:
-        logger.warning("API_KEYS is empty: management API is UNAUTHENTICATED (dev only)")
+    logger.info("Management API requires a JWT access token")
     logger.info("%s v%s started (%s)", settings.APP_NAME, __version__, settings.ENVIRONMENT)
     try:
         yield
@@ -50,7 +47,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=__version__,
-        description="AI-powered email marketing platform API.",
+        description="Email marketing platform API.",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",

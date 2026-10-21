@@ -6,7 +6,7 @@ This document provides a comprehensive breakdown of the `zozomarket-frontend` co
 
 ## 1. Executive Summary & Architecture Philosophy
 
-ZozoMarket is an AI-powered SaaS platform focused strictly on **Email Marketing**, delivering automated drip journeys, visual email building, audience CRM, and deep deliverability analytics.
+ZozoMarket is an email marketing SaaS platform, delivering automated drip journeys, visual email building, audience CRM, and deep deliverability analytics.
 
 *(Note: Social media marketing capabilities are phased out of this version and reserved for future updates).*
 
@@ -23,6 +23,7 @@ ZozoMarket is an AI-powered SaaS platform focused strictly on **Email Marketing*
 ```text
 zozomarket-frontend/
 ├── app/                        # Next.js App Router root
+│   ├── f/[slug]/               # Public form link. A live signup is stored as a contact.
 │   ├── (app)/                  # Route group sharing the authenticated dashboard layout
 │   │   ├── layout.tsx          # App shell: Sidebar + Header + Main content area
 │   │   ├── dashboard/          # Email marketing command center & key performance indicators
@@ -30,11 +31,9 @@ zozomarket-frontend/
 │   │   ├── email/              # Email marketing core features
 │   │   │   ├── campaigns/      # Broadcasts list, status tracking, open & click rates
 │   │   │   ├── builder/        # Visual drag-and-drop / block-based email editor
-│   │   │   ├── templates/      # Pre-built email template gallery
-│   │   │   └── automations/    # Visual drip sequences & automated customer journeys
+│   │   │   └── templates/      # Saved layouts that open a draft campaign in the builder
 │   │   ├── contacts/           # Audience CRM, tags, filters, and subscriber management
 │   │   ├── forms/              # Lead capture forms & landing pages
-│   │   ├── ai-assistant/       # AI Email copywriter (subject lines, headers, body drafts)
 │   │   ├── media/              # Media asset library (images, banners, logos for emails)
 │   │   ├── analytics/          # Email delivery, open rates, click-through engagement
 │   │   ├── integrations/       # External service connections (Shopify, Stripe, Zapier)
@@ -104,19 +103,17 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 
 #### 3. Core Feature Pages (`app/(app)/*`)
 - **`dashboard/page.tsx`**: Email marketing command center featuring:
-  - High-level KPIs: Emails Delivered (95k), Delivery Rate (98.8%), Avg. Open Rate (39.8%), Avg. Click Rate (6.1%), Total Subscribers (18.4k), Scheduled Campaigns, Active Automations.
+  - High-level KPIs: emails delivered, delivery rate, open rate, click rate, subscribers, and scheduled campaigns.
   - 6-week Email Performance Trend line chart (Delivered, Opens, Clicks).
   - Campaign open-rate vs click-rate bar comparison.
   - Recent Campaigns and Upcoming Scheduled Email Dispatches tables.
 - **`calendar/page.tsx`**: Campaign Calendar tracking all scheduled email dispatches across dates and times. Filterable by type (*Newsletter*, *Promotional*, *Automated*, *Announcement*) in Month and List views.
-- **`email/campaigns/page.tsx`**: Email broadcast manager tracking campaign statuses (*Draft*, *Scheduled*, *Sending*, *Sent*, *Failed*), audience segments, recipient counts, delivery rates, and open/click percentages.
-- **`email/builder/page.tsx`**: Visual email editor allowing users to assemble emails using blocks (header, text, image, button, columns), preview live across devices, and test send.
-- **`email/templates/page.tsx`**: Gallery of responsive pre-designed email templates (welcome emails, promotional blasts, product announcements).
-- **`email/automations/page.tsx`**: Visual drip automation builder for customer lifecycle journeys (welcome drip series, abandoned cart recovery, re-engagement).
-- **`contacts/page.tsx`**: Audience CRM with bulk tagging, bulk deletion, search, subscriber status filters (*Subscribed*, *Pending*, *Unsubscribed*), and contact creation dialog.
-- **`forms/page.tsx`**: Lead capture forms and newsletter signup landing pages with conversion tracking.
-- **`ai-assistant/page.tsx`**: AI Email Copywriter generating subject lines, preview text, headers, and body drafts tailored by email format (*Newsletter*, *Promotional Blast*, *Welcome Sequence*, *Announcement*) with 1-click export directly to the Email Builder.
-- **`media/page.tsx`**: Digital asset manager for uploading, organizing, and selecting images and graphics used in email campaigns.
+- **`email/campaigns/page.tsx`**: Email broadcast manager. Each saved draft appears here. Draft and Scheduled rows can change status.
+- **`email/builder/page.tsx`**: Visual email editor. Save draft stores the campaign and opens the campaign list. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
+- **`email/templates/page.tsx`**: Gallery of saved and starter layouts. Use Template creates a draft campaign and opens the builder. Delete removes a saved template. Starter layouts stay.
+- **`contacts/page.tsx`**: Audience CRM with bulk tagging, bulk deletion, search, subscriber status filters (*Subscribed*, *Pending*, *Unsubscribed*), and contact creation dialog. The Collected column shows answers stored from a form.
+- **`forms/page.tsx`**: Signup forms, embedded forms, and popup forms. Landing pages are the same as signup forms, so they are listed and saved as signup forms. Each row has its own link, `/f/{slug}`, with Copy and Open. Edit opens the saved form so the title, fields, tags, and success message can be updated. Delete removes the form and leaves existing contacts. Set Live publishes the link.
+- **`media/page.tsx`**: Digital asset manager for uploading, organizing, and selecting images and graphics used in email campaigns. Delete asks for confirmation, then removes the file.
 - **`analytics/page.tsx`**: Dedicated Email Analytics analyzing delivery health, weekly opens and clicks, and top-performing email campaigns.
 - **`integrations/page.tsx`**: E-commerce and CRM connectors (Shopify, Stripe, Zapier, WordPress).
 - **`settings/page.tsx`**: Workspace configuration, sender email domain verification, team roles, and notifications.
@@ -140,7 +137,7 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 #### 2. Domain Components (`components/app/`)
 - **`app-header.tsx`**: Search input, workspace switcher, notification drawer, and theme toggle.
 - **`app-sidebar.tsx`**: Collapsible vertical navigation based on `lib/nav.ts`.
-- **`create-new-menu.tsx`**: "+ Create New" action menu with shortcuts (*Create Campaign*, *New Automation*, *Add Contact*, *Write with AI*).
+- **`create-new-menu.tsx`**: "+ Create New" action menu with shortcuts (*Create Campaign*, *New Automation*, *Add Contact*).
 - **`charts.tsx`**: Recharts wrappers (`TrendChart`, `BarsChart`) with theme-aware colors and responsive SVG containers.
 - **`shared.tsx`**: Reusable design system widgets (`PageHeader`, `KpiCard`, `Panel`, `StatusBadge`, `SearchInput`, `NativeSelect`, `Segmented`, `TableWrap`, `EmptyState`, `ConfirmDialog`).
 
@@ -153,7 +150,7 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 
 #### 2. Async Client Service (`lib/api.ts`)
 - Async service isolating UI pages from the transport layer.
-- Methods: `api.dashboard.getKPIs()`, `api.campaigns.*`, `api.contacts.*`, `api.calendar.*`, `api.analytics.*`, `api.media.*`.
+- Methods: `api.dashboard.getKPIs()`, `api.campaigns.*`, `api.contacts.*`, `api.forms.list/create/update/delete/submit`, `api.calendar.*`, `api.analytics.*`, `api.media.*`.
 - Persists mutations in browser `localStorage`.
 - Ready to be swapped for real Python FastAPI backend calls without touching React component code.
 

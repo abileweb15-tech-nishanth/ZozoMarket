@@ -5,7 +5,7 @@ from sqlalchemy import JSON, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UUIDMixin, str_enum
+from app.models.base import TimestampMixin, UUIDMixin, WorkspaceMixin, str_enum
 
 
 class FormKind(StrEnum):
@@ -21,7 +21,7 @@ class FormStatus(StrEnum):
     PAUSED = "Paused"
 
 
-class Form(UUIDMixin, TimestampMixin, Base):
+class Form(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "forms"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)

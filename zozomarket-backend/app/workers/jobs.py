@@ -8,19 +8,25 @@ from fastapi import BackgroundTasks
 
 from app.core import database
 from app.core.config import settings
-from app.services import automation_service, campaign_service
+from app.services import campaign_service
 
 logger = logging.getLogger(__name__)
 _running: set[asyncio.Task] = set()
+_sqlite_lock = asyncio.Lock()
 
 
 async def dispatch_campaign(campaign_id: str) -> None:
-    async with database.SessionLocal() as session:
-        await campaign_service.run_dispatch(session, campaign_id)
+    if "sqlite" in settings.DATABASE_URL:
+        async with _sqlite_lock:
+            async with database.SessionLocal() as session:
+                await campaign_service.run_dispatch(session, campaign_id)
+    else:
+        async with database.SessionLocal() as session:
+            await campaign_service.run_dispatch(session, campaign_id)
 
 
 async def scheduler_tick() -> dict[str, int]:
-    """Claim due campaigns and run due automation steps. Safe to run on many instances."""
+    """Claim due campaigns. Safe to run on many instances."""
     async with database.SessionLocal() as session:
         claimed = await campaign_service.claim_due(session)
     for campaign_id in claimed:
@@ -30,13 +36,9 @@ async def scheduler_tick() -> dict[str, int]:
             task = asyncio.create_task(dispatch_campaign(campaign_id))
             _running.add(task)
             task.add_done_callback(_running.discard)
-    async with database.SessionLocal() as session:
-        steps = await automation_service.process_due_enrollments(session)
-    if claimed or steps:
-        logger.info(
-            "Scheduler tick: %d campaign(s) dispatched, %d automation step(s)", len(claimed), steps
-        )
-    return {"campaigns": len(claimed), "automation_steps": steps}
+    if claimed:
+        logger.info("Scheduler tick: %d campaign(s) dispatched", len(claimed))
+    return {"campaigns": len(claimed)}
 
 
 def _send_celery(campaign_id: str) -> None:

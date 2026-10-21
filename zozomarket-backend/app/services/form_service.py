@@ -33,13 +33,18 @@ def _slugify(value: str) -> str:
     return slug[:100] or "form"
 
 
+def _visible_everywhere(stmt):
+    # Slugs are unique across workspaces, so this lookup must see every workspace.
+    return stmt.execution_options(include_all_workspaces=True)
+
+
 async def _unique_slug(session: AsyncSession, base: str, exclude_id: str | None = None) -> str:
     candidate = base
     while True:
         stmt = select(Form.id).where(Form.slug == candidate)
         if exclude_id:
             stmt = stmt.where(Form.id != exclude_id)
-        if await session.scalar(stmt) is None:
+        if await session.scalar(_visible_everywhere(stmt)) is None:
             return candidate
         candidate = f"{base}-{secrets.token_hex(2)}"
 
@@ -79,7 +84,7 @@ async def create_form(session: AsyncSession, data: FormCreate) -> Form:
     values = data.model_dump(exclude={"slug"})
     values["fields"] = [f.model_dump() for f in data.fields]
     if data.slug:
-        if await session.scalar(select(Form.id).where(Form.slug == data.slug)):
+        if await session.scalar(_visible_everywhere(select(Form.id).where(Form.slug == data.slug))):
             raise ConflictError(f"Slug '{data.slug}' is already in use")
         slug = data.slug
     else:
@@ -97,7 +102,7 @@ async def update_form(session: AsyncSession, form_id: str, data: FormUpdate) -> 
     if (
         new_slug
         and new_slug != form.slug
-        and await session.scalar(select(Form.id).where(Form.slug == new_slug))
+        and await session.scalar(_visible_everywhere(select(Form.id).where(Form.slug == new_slug)))
     ):
         raise ConflictError(f"Slug '{new_slug}' is already in use")
     if "fields" in changes and data.fields is not None:
@@ -151,6 +156,13 @@ def _validate_fields(form: Form, values: dict[str, Any]) -> dict[str, Any]:
 
 async def submit(session: AsyncSession, slug: str, data: FormSubmission) -> dict[str, Any]:
     form = await get_live_form(session, slug)
+    from app.core.tenancy import workspace_scope
+
+    with workspace_scope(form.workspace_id):
+        return await _submit_scoped(session, form, data)
+
+
+async def _submit_scoped(session: AsyncSession, form: Form, data: FormSubmission) -> dict[str, Any]:
     result = {
         "message": form.success_message,
         "redirect_url": form.redirect_url,
@@ -239,10 +251,15 @@ async def confirm(session: AsyncSession, token: str) -> Contact:
         contact.subscribed_at = utcnow()
         await session.flush()
         data = {"formId": payload.get("f")}
-        await automation_service.handle_event(session, TriggerType.FORM_SUBMITTED, contact, data)
-        await automation_service.handle_event(
-            session, TriggerType.CONTACT_SUBSCRIBED, contact, data
-        )
+        from app.core.tenancy import workspace_scope
+
+        with workspace_scope(contact.workspace_id):
+            await automation_service.handle_event(
+                session, TriggerType.FORM_SUBMITTED, contact, data
+            )
+            await automation_service.handle_event(
+                session, TriggerType.CONTACT_SUBSCRIBED, contact, data
+            )
         await session.commit()
     return contact
 

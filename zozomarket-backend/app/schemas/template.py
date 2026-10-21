@@ -33,6 +33,8 @@ class BuilderBlock(CamelModel):
     padding: int = Field(default=16, ge=0, le=200)
     link: str | None = Field(default=None, max_length=2000)
     image: str | None = Field(default=None, max_length=2000)
+    font: str | None = Field(default=None, max_length=64)
+    width: int | None = Field(default=None, ge=40, le=600)
 
 
 class TemplateCreate(InputModel):

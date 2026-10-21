@@ -10,7 +10,6 @@ This application is strictly focused on **Email Marketing**:
 - **Email Automations**: Visual drip sequences, trigger rules, and customer onboarding flows.
 - **Templates Gallery**: Pre-built layouts for newsletters, product launches, flash sales, and announcements.
 - **Campaign Calendar**: Monthly and list-view schedule of upcoming email dispatches.
-- **AI Email Copywriter**: Intelligent assistant generating high-converting subject lines, preheaders, and email copy.
 - **Audience & Contacts**: Subscriber management, tags, CSV import, and segment filtering.
 - **Lead Capture Forms**: Embeddable newsletter signup forms and landing pages.
 - **Email Analytics**: Open rates, click-through rates, bounce tracking, and performance over time.
@@ -25,7 +24,7 @@ This application is strictly focused on **Email Marketing**:
 - **Components**: shadcn/ui (`@base-ui/react`), Sonner toasts, Lucide icons
 - **Data Visualization**: Recharts
 - **Theme**: Light & Dark mode support via `next-themes`
-- **Data Layer**: Simulated async REST API client layer (`lib/api.ts`) backed by structured dataset (`data/marketing-data.json`) and Next.js App Router API endpoints (`app/api/*`)
+- **Data Layer**: `lib/api.ts` calls the FastAPI backend (`NEXT_PUBLIC_API_URL`, default `http://localhost:8000/api/v1`). Demo records are seeded by the backend.
 
 ## Getting Started
 
@@ -42,6 +41,12 @@ pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser. The root path automatically redirects to `/dashboard`.
+
+The UI reads from the Python API, so start that first from `zozomarket-backend`:
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
 
 ### 3. Production Build
 

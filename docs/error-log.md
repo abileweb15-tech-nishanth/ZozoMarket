@@ -21,3 +21,29 @@
   - `pnpm run build` (Next.js 16.4.0 Turbopack production build)
 - **Verification result**:
   Build succeeded completely (`Compiled successfully in 17.3s`, all 21 static pages generated with 0 errors).
+
+## Entry: 2026-10-20 - Creating a form with a taken slug returned 500
+
+- **Date**: 2026-10-20
+- **Error or symptom**: `POST /api/v1/forms` returned `Internal server error` when the generated slug already belonged to another workspace.
+- **Root cause**: The slug column is unique for the whole database. The uniqueness check only saw the signed-in workspace, so it treated another workspace's slug as free and the insert raised a unique violation.
+- **Solution**: Slug lookups in `create_form`, `update_form`, and `_unique_slug` use `include_all_workspaces`. A colliding name gets a different slug.
+- **Files affected**:
+  - `zozomarket-backend/app/services/form_service.py`
+  - `zozomarket-backend/tests/test_forms.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_forms.py -q`
+- **Verification result**: `pytest tests/test_forms.py -q` — 7 passed.
+
+## Entry: 2026-10-20 - Dashboard mail counts were shared across accounts
+
+- **Date**: 2026-10-20
+- **Error or symptom**: Every signed-in workspace saw the same sent, delivered, and open numbers.
+- **Root cause**: Mailtrap stats are one shared sending log. The dashboard replaced each workspace's own counts with that log.
+- **Solution**: Only the workspace for `mnishanthkumar2@gmail.com` reads the Mailtrap log. Other workspaces keep the counts from mail they sent.
+- **Files affected**:
+  - `zozomarket-backend/app/services/analytics_service.py`
+  - `zozomarket-backend/tests/test_insights.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_insights.py -q`
+- **Verification result**: `pytest tests/test_insights.py -q` — 6 passed.

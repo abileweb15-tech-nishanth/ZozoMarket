@@ -4,10 +4,10 @@ from sqlalchemy import JSON, Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UUIDMixin
+from app.models.base import TimestampMixin, UUIDMixin, WorkspaceMixin
 
 
-class EmailTemplate(UUIDMixin, TimestampMixin, Base):
+class EmailTemplate(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     __tablename__ = "email_templates"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)

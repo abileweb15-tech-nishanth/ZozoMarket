@@ -15,3 +15,22 @@
   - Full separation between presentation components and data fetching.
   - Easy transition to a remote FastAPI backend in the future by simply swapping endpoints in `lib/api.ts`.
   - Zero external server dependencies required for frontend development and static builds.
+
+## ADR-002: PostgreSQL for structured data, disk for files
+
+- **Date**: 2026-10-17
+- **Status**: Accepted
+- **Context**: The API had been pointed at MySQL. The existing PostgreSQL database `zozomarket` is the store for accounts, campaigns, and other rows. Uploaded images are files, not database blobs.
+- **Decision**:
+  1. `DATABASE_URL` uses `postgresql+asyncpg` against database `zozomarket`. Alembic creates and alters tables. Tests stay on SQLite.
+  2. Media files, including a workspace logo, stay under `zozomarket-backend/storage/media`. The database stores the URL.
+  3. Workspace profile, brand, and sending defaults are columns on `workspaces`, loaded and saved through `GET`/`PATCH /api/v1/workspace` and `POST /api/v1/workspace/logo`.
+- **Consequences**: Existing MySQL rows are not copied. A fresh signup is required against PostgreSQL.
+
+## ADR-003: No AI copywriter in the product
+
+- **Date**: 2026-10-17
+- **Status**: Accepted
+- **Context**: The dashboard, email builder, navigation, and API exposed an AI assistant, sample recommendations, and a copywriter backed by a mock or third-party model.
+- **Decision**: Remove those screens, client methods, and the `/api/v1/ai` routes. Email composition stays in the visual builder.
+- **Consequences**: `POST /ai/generate`, `/ai/subject-lines`, and `/ai/preheaders` are gone. OpenAI and Anthropic settings are no longer read.

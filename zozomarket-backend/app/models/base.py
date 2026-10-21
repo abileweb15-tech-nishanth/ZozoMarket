@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, String, TypeDecorator
+from sqlalchemy import DateTime, Enum, ForeignKey, String, TypeDecorator, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -48,6 +48,25 @@ def str_enum(enum_cls: type[StrEnum], length: int = 32) -> Enum:
 
 class UUIDMixin:
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+
+
+class WorkspaceMixin:
+    """Every customer-owned row belongs to exactly one workspace."""
+
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+
+
+@event.listens_for(WorkspaceMixin, "before_insert", propagate=True)
+def _stamp_workspace(_mapper, _connection, target) -> None:
+    if getattr(target, "workspace_id", None):
+        return
+    from app.core.tenancy import current_workspace_id
+
+    workspace_id = current_workspace_id.get()
+    if workspace_id:
+        target.workspace_id = workspace_id
 
 
 class TimestampMixin:

@@ -93,6 +93,64 @@ def hash_password(password: str) -> str:
     return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${_b64(salt)}${_b64(digest)}"
 
 
+def _jwt(payload: dict[str, Any]) -> str:
+    header = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = _b64(json.dumps(payload, separators=(",", ":")).encode())
+    signing = f"{header}.{body}".encode()
+    signature = _b64(hmac.new(_secret(), signing, hashlib.sha256).digest())
+    return f"{header}.{body}.{signature}"
+
+
+def _read_jwt(token: str, expected_type: str) -> dict[str, Any] | None:
+    try:
+        header, body, signature = token.split(".")
+        signing = f"{header}.{body}".encode()
+        expected = _b64(hmac.new(_secret(), signing, hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            return None
+        payload = json.loads(_unb64(body))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if payload.get("typ") != expected_type:
+        return None
+    if int(payload.get("exp", 0)) < time.time():
+        return None
+    return payload
+
+
+def create_access_token(user_id: str, workspace_id: str) -> str:
+    now = int(time.time())
+    return _jwt(
+        {
+            "sub": user_id,
+            "wid": workspace_id,
+            "typ": "access",
+            "iat": now,
+            "exp": now + settings.ACCESS_TOKEN_MINUTES * 60,
+        }
+    )
+
+
+def create_refresh_token(user_id: str) -> str:
+    now = int(time.time())
+    return _jwt(
+        {
+            "sub": user_id,
+            "typ": "refresh",
+            "iat": now,
+            "exp": now + settings.REFRESH_TOKEN_DAYS * 24 * 60 * 60,
+        }
+    )
+
+
+def read_access_token(token: str) -> dict[str, Any] | None:
+    return _read_jwt(token, "access")
+
+
+def read_refresh_token(token: str) -> dict[str, Any] | None:
+    return _read_jwt(token, "refresh")
+
+
 def verify_password(password: str, hashed: str) -> bool:
     try:
         scheme, n, r, p, salt, digest = hashed.split("$")

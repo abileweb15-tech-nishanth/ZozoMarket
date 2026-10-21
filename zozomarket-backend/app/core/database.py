@@ -28,10 +28,17 @@ class Base(DeclarativeBase):
 
 def _engine_kwargs(url: str) -> dict[str, Any]:
     if url.startswith("sqlite"):
-        kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
+        kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False, "timeout": 30}}
         if ":memory:" in url or url.rstrip("/").endswith("sqlite+aiosqlite:"):
             kwargs["poolclass"] = StaticPool
         return kwargs
+    if url.startswith("mysql"):
+        return {
+            "pool_size": settings.DATABASE_POOL_SIZE,
+            "max_overflow": settings.DATABASE_MAX_OVERFLOW,
+            "pool_pre_ping": True,
+            "connect_args": {"charset": "utf8mb4"},
+        }
     return {
         "pool_size": settings.DATABASE_POOL_SIZE,
         "max_overflow": settings.DATABASE_MAX_OVERFLOW,
@@ -53,7 +60,8 @@ def _configure_sqlite(engine: AsyncEngine, *, immediate: bool) -> None:
         cursor.execute("PRAGMA foreign_keys=ON")
         # WAL lets readers proceed while the scheduler/background tasks write.
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=60000")
         cursor.close()
 
     @event.listens_for(engine.sync_engine, "begin")
@@ -61,7 +69,7 @@ def _configure_sqlite(engine: AsyncEngine, *, immediate: bool) -> None:
         conn.exec_driver_sql(begin)
 
 
-def create_engine(url: str, *, sqlite_immediate: bool = True) -> AsyncEngine:
+def create_engine(url: str, *, sqlite_immediate: bool = False) -> AsyncEngine:
     engine = create_async_engine(url, echo=settings.DATABASE_ECHO, **_engine_kwargs(url))
     if url.startswith("sqlite"):
         _configure_sqlite(engine, immediate=sqlite_immediate)

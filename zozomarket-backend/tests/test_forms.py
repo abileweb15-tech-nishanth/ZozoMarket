@@ -102,3 +102,47 @@ async def test_landing_page_and_slug_uniqueness(client, anon_client):
 
     listed = (await client.get(BASE, params={"kind": "Landing Pages"})).json()
     assert listed["total"] == 1
+
+
+async def test_same_name_in_another_workspace_gets_its_own_slug(client, anon_client):
+    first = (await client.post(BASE, json={"name": "Shared Name"})).json()["data"]
+    other = await anon_client.post(
+        "/api/v1/auth/signup",
+        json={
+            "name": "Other Owner",
+            "email": "other-forms@example.com",
+            "password": "correct-horse",
+            "workspaceName": "Other Studio",
+        },
+    )
+    token = other.json()["data"]["accessToken"]
+    second = await anon_client.post(
+        BASE,
+        json={"name": "Shared Name"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["data"]["slug"] != first["slug"]
+
+
+async def test_update_and_delete_form(client):
+    form = (await client.post(BASE, json={"name": "Popup offer", "kind": "Popup Forms"})).json()["data"]
+    updated = (
+        await client.patch(
+            f"{BASE}/{form['id']}",
+            json={
+                "title": "Get the offer",
+                "tags": ["offer"],
+                "kind": "Embedded Forms",
+                "fields": [{"name": "company", "label": "Company", "type": "text", "required": False}],
+            },
+        )
+    ).json()["data"]
+    assert updated["title"] == "Get the offer"
+    assert updated["kind"] == "Embedded Forms"
+    assert updated["tags"] == ["offer"]
+    assert updated["fields"][0]["name"] == "company"
+
+    deleted = await client.delete(f"{BASE}/{form['id']}")
+    assert deleted.status_code == 200 and deleted.json()["success"] is True
+    assert (await client.get(f"{BASE}/{form['id']}")).status_code == 404

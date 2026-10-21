@@ -1,5 +1,6 @@
 """Import every model so SQLAlchemy/Alembic see the full metadata."""
 
+from app.models.account import User, Workspace
 from app.models.automation import (
     Automation,
     AutomationEnrollment,
@@ -37,5 +38,7 @@ __all__ = [
     "SubscriptionStatus",
     "Tag",
     "TriggerType",
+    "User",
+    "Workspace",
     "contact_tags",
 ]

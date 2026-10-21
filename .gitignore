@@ -26,6 +26,13 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+docs/*
+docs/*.md
+docs/architecture.md
+docs/decisions.md
+docs/error-log.md
+docs/frontend.md
+
 
 # Operating system files
 .DS_Store
@@ -47,7 +54,17 @@ Desktop.ini
 .agents/**/sessions/
 .agent-cache/
 .agent-temp/
-
+agents/
+.cursor/
+agent/
+agents/**/memory/
+agents/**/sessions/
+agents/**/cache/
+agents/**/temp/
+agents/**/tmp/
+agents/**/logs/
+agents/**/errors/
+agents/**/warnings/
 # ==========================================
 # zozomarket-frontend - React / Node.js
 # ==========================================
@@ -65,6 +82,16 @@ zozomarket-frontend/.cache/
 zozomarket-frontend/.vite/
 zozomarket-frontend/.vercel/
 zozomarket-frontend/.netlify/
+zozomarket-frontend/AGENTS/
+zozomarket-frontend/.ag
+zozomarket-frontend/.agents/
+zozomarket-frontend/.agent-cache/
+zozomarket-frontend/.agent-temp/
+zozomarket-frontend/.agent-sessions/
+zozomarket-frontend/.agent-logs/
+zozomarket-frontend/.agent-errors/
+zozomarket-frontend/.agent-warnings/
+zozomarket-frontend/.agent-results/
 
 # zozomarket-frontend package manager files that may contain local state
 zozomarket-frontend/.npm/

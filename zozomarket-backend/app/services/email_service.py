@@ -15,8 +15,10 @@ from typing import Protocol
 from urllib.parse import quote
 
 import httpx
+import mailtrap as mt
 
 from app.core.config import settings
+from app.core.exceptions import ExternalServiceError
 from app.core.security import sign_token
 from app.services.template_service import contact_variables, html_to_text, render_merge_tags
 
@@ -66,10 +68,25 @@ class ConsoleSender:
         return SendResult(provider_message_id=f"console-{uuid.uuid4()}")
 
 
-class SMTPSender:
-    """Works with any SMTP relay, including Amazon SES / Postmark / Mailgun SMTP endpoints."""
+@dataclass(slots=True)
+class SmtpSettings:
+    host: str
+    port: int
+    username: str | None
+    password: str | None
+    use_tls: bool
 
-    name = "smtp"
+
+class SMTPSender:
+    """Works with any SMTP relay, including Mailtrap's sandbox and Amazon SES."""
+
+    def __init__(
+        self, smtp: SmtpSettings, *, name: str = "smtp", require_login: bool = False
+    ) -> None:
+        if require_login and not (smtp.username and smtp.password):
+            raise ExternalServiceError("SMTP username and password are required")
+        self.name = name
+        self._smtp = smtp
 
     def _build(self, email: OutboundEmail) -> MimeMessage:
         msg = MimeMessage()
@@ -85,13 +102,23 @@ class SMTPSender:
         msg.add_alternative(email.html, subtype="html")
         return msg
 
+    def _connect(self) -> smtplib.SMTP:
+        if self._smtp.port == 465:
+            return smtplib.SMTP_SSL(
+                self._smtp.host,
+                self._smtp.port,
+                timeout=30,
+                context=ssl.create_default_context(),
+            )
+        client = smtplib.SMTP(self._smtp.host, self._smtp.port, timeout=30)
+        if self._smtp.use_tls:
+            client.starttls(context=ssl.create_default_context())
+        return client
+
     def _send_sync(self, msg: MimeMessage) -> None:
-        password = settings.SMTP_PASSWORD.get_secret_value() if settings.SMTP_PASSWORD else None
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as smtp:
-            if settings.SMTP_USE_TLS:
-                smtp.starttls(context=ssl.create_default_context())
-            if settings.SMTP_USERNAME and password:
-                smtp.login(settings.SMTP_USERNAME, password)
+        with self._connect() as smtp:
+            if self._smtp.username and self._smtp.password:
+                smtp.login(self._smtp.username, self._smtp.password)
             smtp.send_message(msg)
 
     async def send(self, email: OutboundEmail) -> SendResult:
@@ -109,6 +136,49 @@ class SMTPSender:
         except (OSError, smtplib.SMTPException) as exc:
             raise EmailDeliveryError(f"SMTP error: {exc}") from exc
         return SendResult(provider_message_id=str(msg["Message-ID"]).strip("<>"))
+
+
+class MailtrapSender:
+    """Sends through the Mailtrap Email API. The saved HTML is the message body."""
+
+    name = "mailtrap"
+
+    def __init__(self) -> None:
+        token = _secret(settings.MAILTRAP_API_TOKEN)
+        if not token:
+            raise ExternalServiceError(
+                "MAILTRAP_API_TOKEN is required for EMAIL_PROVIDER=mailtrap"
+            )
+        self._client = mt.MailtrapClient(token=token)
+
+    def _send_sync(self, email: OutboundEmail) -> str:
+        sender_email = email.from_email or ""
+        if not sender_email or sender_email.endswith(".local"):
+            sender_email = settings.MAILTRAP_SENDER_EMAIL
+        mail = mt.Mail(
+            sender=mt.Address(
+                email=sender_email,
+                name=email.from_name or settings.MAILTRAP_SENDER_NAME,
+            ),
+            to=[mt.Address(email=email.to)],
+            subject=email.subject,
+            text=email.text or html_to_text(email.html),
+            html=email.html,
+            category=settings.MAILTRAP_CATEGORY,
+            reply_to=mt.Address(email=email.reply_to) if email.reply_to else None,
+        )
+        response = self._client.send(mail)
+        message_ids = response.get("message_ids") or []
+        return str(message_ids[0]) if message_ids else ""
+
+    async def send(self, email: OutboundEmail) -> SendResult:
+        try:
+            message_id = await asyncio.to_thread(self._send_sync, email)
+        except mt.MailtrapError as exc:
+            raise EmailDeliveryError(f"Mailtrap error: {exc}", permanent=True) from exc
+        except OSError as exc:
+            raise EmailDeliveryError(f"Mailtrap transport error: {exc}") from exc
+        return SendResult(provider_message_id=message_id)
 
 
 class ResendSender:
@@ -146,11 +216,28 @@ class ResendSender:
         return SendResult(provider_message_id=resp.json().get("id", ""))
 
 
+def _secret(value: object) -> str | None:
+    if value is None:
+        return None
+    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
+    return revealed or None
+
+
 @lru_cache
 def get_sender() -> EmailSender:
     match settings.EMAIL_PROVIDER:
         case "smtp":
-            return SMTPSender()
+            return SMTPSender(
+                SmtpSettings(
+                    settings.SMTP_HOST,
+                    settings.SMTP_PORT,
+                    settings.SMTP_USERNAME,
+                    _secret(settings.SMTP_PASSWORD),
+                    settings.SMTP_USE_TLS,
+                )
+            )
+        case "mailtrap":
+            return MailtrapSender()
         case "resend":
             return ResendSender()
         case _:

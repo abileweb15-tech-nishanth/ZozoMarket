@@ -1,7 +1,7 @@
 import {
-  LayoutDashboard, CalendarDays, Mail, PenSquare, LayoutTemplate, Workflow,
-  Users, FileInput, Sparkles, FolderOpen,
-  PieChart, Plug, Settings, CreditCard, type LucideIcon,
+  LayoutDashboard, CalendarDays, Mail, PenSquare, LayoutTemplate,
+  Users, FileInput, FolderOpen,
+  PieChart, Settings, type LucideIcon,
 } from 'lucide-react'
 
 export type NavItem = { label: string; href: string; icon: LucideIcon }
@@ -21,7 +21,6 @@ export const navGroups: NavGroup[] = [
       { label: 'Email Campaigns', href: '/email/campaigns', icon: Mail },
       { label: 'Email Builder', href: '/email/builder', icon: PenSquare },
       { label: 'Email Templates', href: '/email/templates', icon: LayoutTemplate },
-      { label: 'Automations & Drips', href: '/email/automations', icon: Workflow },
     ],
   },
   {
@@ -29,7 +28,6 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Contacts & Audience', href: '/contacts', icon: Users },
       { label: 'Forms & Landing Pages', href: '/forms', icon: FileInput },
-      { label: 'AI Email Assistant', href: '/ai-assistant', icon: Sparkles },
       { label: 'Media Library', href: '/media', icon: FolderOpen },
     ],
   },
@@ -37,9 +35,7 @@ export const navGroups: NavGroup[] = [
     label: 'Reports & Settings',
     items: [
       { label: 'Email Analytics', href: '/analytics', icon: PieChart },
-      { label: 'Integrations', href: '/integrations', icon: Plug },
       { label: 'Workspace Settings', href: '/settings', icon: Settings },
-      { label: 'Billing & Plan', href: '/billing', icon: CreditCard },
     ],
   },
 ]

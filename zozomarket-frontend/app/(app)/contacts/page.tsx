@@ -9,14 +9,15 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PageHeader, KpiCard, SearchInput, NativeSelect, FilterBar, StatusBadge, TableWrap, ConfirmDialog, SimulatedNote, th, td } from '@/components/app/shared'
-import { contacts as seed, fmtDate, type Contact } from '@/lib/mock-data'
-import { api } from '@/lib/api'
+import { PageHeader, KpiCard, SearchInput, NativeSelect, FilterBar, StatusBadge, TableWrap, ConfirmDialog, th, td } from '@/components/app/shared'
+import { api, type Contact } from '@/lib/api'
+import { fmtDate } from '@/lib/format'
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function ContactsPage() {
-  const [rows, setRows] = useState<Contact[]>(seed)
+  const [rows, setRows] = useState<Contact[]>([])
+  const [importFile, setImportFile] = useState<File | null>(null)
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All statuses')
   const [tag, setTag] = useState('All tags')
@@ -30,7 +31,7 @@ export default function ContactsPage() {
     let active = true
     api.contacts.list().then((data) => {
       if (active) setRows(data)
-    })
+    }).catch((err: Error) => toast.error(err.message))
     return () => {
       active = false
     }
@@ -57,16 +58,20 @@ export default function ContactsPage() {
     if (Object.keys(errs).length) return
     const tags = String(f.get('tags')).split(',').map((t) => t.trim()).filter(Boolean)
     const status = consent ? 'Subscribed' : 'Pending'
-    if (editing === 'new') {
-      const created = await api.contacts.create({ name, email, tags, source: 'Manual', status, added: new Date().toISOString().slice(0, 10) })
-      setRows((r) => [created, ...r])
-      toast.success('Contact added')
-    } else if (editing) {
-      const updated = await api.contacts.update(editing.id, { name, email, tags, status: editing.status === 'Unsubscribed' ? 'Unsubscribed' : status })
-      setRows((r) => r.map((x) => (x.id === editing.id ? updated : x)))
-      toast.success('Contact updated')
+    try {
+      if (editing === 'new') {
+        const created = await api.contacts.create({ name, email, tags, source: 'Manual', status })
+        setRows((r) => [created, ...r])
+        toast.success('Contact added')
+      } else if (editing) {
+        const updated = await api.contacts.update(editing.id, { name, email, tags, status: editing.status === 'Unsubscribed' ? 'Unsubscribed' : status })
+        setRows((r) => r.map((x) => (x.id === editing.id ? updated : x)))
+        toast.success('Contact updated')
+      }
+      setEditing(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save the contact')
     }
-    setEditing(null)
   }
 
   const exportCsv = () => {
@@ -116,7 +121,7 @@ export default function ContactsPage() {
           <thead className="border-b border-border bg-muted">
             <tr>
               <th scope="col" className={th}><Checkbox aria-label="Select all" checked={allSelected} onCheckedChange={(c) => setSel(c ? list.map((r) => r.id) : [])} /></th>
-              {['Name', 'Email', 'Tags', 'Source', 'Subscription', 'Date Added'].map((h) => <th key={h} scope="col" className={th}>{h}</th>)}
+              {['Name', 'Email', 'Collected', 'Tags', 'Source', 'Subscription', 'Date Added'].map((h) => <th key={h} scope="col" className={th}>{h}</th>)}
               <th scope="col" className={th}><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
@@ -126,6 +131,7 @@ export default function ContactsPage() {
                 <td className={td}><Checkbox aria-label={`Select ${c.name}`} checked={sel.includes(c.id)} onCheckedChange={(v) => setSel((s) => v ? [...s, c.id] : s.filter((x) => x !== c.id))} /></td>
                 <td className={`${td} font-medium`}>{c.name}</td>
                 <td className={`${td} text-muted-foreground`}>{c.email}</td>
+                <td className={`${td} text-muted-foreground`}>{Object.entries(c.attributes ?? {}).map(([key, value]) => `${key}: ${value}`).join(', ') || '—'}</td>
                 <td className={td}><div className="flex gap-1">{c.tags.map((t) => <span key={t} className="rounded-md border border-border px-1.5 py-0.5 text-xs">{t}</span>)}</div></td>
                 <td className={`${td} text-muted-foreground`}>{c.source}</td>
                 <td className={td}><StatusBadge status={c.status} /></td>
@@ -185,8 +191,7 @@ export default function ContactsPage() {
           </DialogHeader>
           {dialog === 'import' ? (
             <>
-              <Input type="file" accept=".csv" aria-label="CSV file" />
-              <SimulatedNote>Import is simulated; uploaded files are not processed.</SimulatedNote>
+              <Input type="file" accept=".csv,text/csv" aria-label="CSV file" onChange={(e) => setImportFile(e.target.files?.[0] ?? null)} />
             </>
           ) : (
             <div className="flex flex-col gap-3">
@@ -196,7 +201,19 @@ export default function ContactsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
-            <Button onClick={() => { toast.success(dialog === 'import' ? 'Import queued (simulated)' : 'Segment created'); setDialog(null) }}>{dialog === 'import' ? 'Import' : 'Create'}</Button>
+            <Button onClick={async () => {
+              if (dialog !== 'import') { toast.message('Segments are the tags on each contact'); setDialog(null); return }
+              if (!importFile) { toast.error('Choose a CSV file first'); return }
+              try {
+                const result = await api.contacts.importCsv(importFile)
+                setRows(await api.contacts.list())
+                toast.success(`Imported ${result.created} new, updated ${result.updated}`)
+                setImportFile(null)
+                setDialog(null)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Import failed')
+              }
+            }}>{dialog === 'import' ? 'Import' : 'Create'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
