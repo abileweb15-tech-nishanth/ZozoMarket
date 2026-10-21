@@ -50,6 +50,27 @@ async def test_template_crud_render_and_preview(client):
     assert (await client.delete(f"/api/v1/templates/{tpl['id']}")).status_code == 200
 
 
+async def test_html_template_stays_html_on_a_new_campaign(client):
+    custom = "<html><body><h1>Code template</h1></body></html>"
+    created = await client.post(
+        "/api/v1/templates",
+        json={"name": "Code note", "html": custom, "design": []},
+    )
+    assert created.status_code == 201, created.text
+    tpl = created.json()["data"]
+    assert tpl["design"] == []
+    assert "Code template" in tpl["html"]
+
+    campaign = await client.post(
+        "/api/v1/campaigns",
+        json={"name": "From code", "templateId": tpl["id"], "html": custom, "design": []},
+    )
+    assert campaign.status_code == 201, campaign.text
+    body = campaign.json()["data"]
+    assert body["design"] == []
+    assert "Code template" in body["html"]
+
+
 async def test_render_endpoint_validates_blocks(client):
     bad = await client.post("/api/v1/templates/render", json={"design": [{"type": "iframe"}]})
     assert bad.status_code == 422

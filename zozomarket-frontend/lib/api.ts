@@ -66,6 +66,7 @@ export type CampaignDraft = EmailCampaign & {
   replyTo: string | null
   templateId: string | null
   design: EmailBlock[]
+  html: string
   audienceTags: string[]
 }
 
@@ -284,6 +285,7 @@ export const api = {
       replyTo?: string | null
       templateId?: string
       design?: EmailBlock[]
+      html?: string
     }) => request<CampaignDraft>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, updates: {
       name?: string
@@ -296,6 +298,7 @@ export const api = {
       fromEmail?: string | null
       replyTo?: string | null
       design?: EmailBlock[]
+      html?: string
     }) => request<CampaignDraft>(`/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }),
     estimate: (tags: string[]) => {
       const query = tags.map((tag) => `tags=${encodeURIComponent(tag)}`).join('&')
@@ -346,7 +349,7 @@ export const api = {
         rows.map((t) => ({ ...t, image: t.image ?? '' })),
       ),
     get: (id: string) => request<TemplateDetail>(`/templates/${id}`),
-    create: (data: { name: string; category?: string; subject?: string; preheader?: string; design: EmailBlock[] }) =>
+    create: (data: { name: string; category?: string; subject?: string; preheader?: string; design?: EmailBlock[]; html?: string }) =>
       request<TemplateDetail>('/templates', { method: 'POST', body: JSON.stringify(data) }),
     render: (data: { design: EmailBlock[]; preheader?: string; variables?: Record<string, string> }) =>
       request<{ html: string; text: string }>('/templates/render', { method: 'POST', body: JSON.stringify(data) }),

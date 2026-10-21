@@ -102,12 +102,14 @@ export default function TemplatesPage() {
     setBusy(true)
     try {
       const workspace = await api.workspace.get()
-      const source = item.saved ? (await api.templates.get(item.id)).design : item.design || []
+      const detail = item.saved ? await api.templates.get(item.id) : null
+      const source = detail ? detail.design : item.design || []
+      const htmlOnly = !!detail && source.length === 0 && detail.html.trim().length > 0
       const created = await api.campaigns.create({
         name: item.name,
         subject: item.subject,
         preheader: item.preheader,
-        design: ensureFooter(source, workspace),
+        ...(htmlOnly ? { html: detail.html, design: [] } : { design: ensureFooter(source, workspace) }),
         templateId: item.saved ? item.id : undefined,
         fromName: workspace.fromName || workspace.name,
         fromEmail: workspace.fromEmail,

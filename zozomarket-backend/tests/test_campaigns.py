@@ -198,3 +198,15 @@ async def test_test_send_and_duplicate_and_delete(client, outbox):
     assert (await client.delete(f"{BASE}/{campaign['id']}")).status_code == 200
     counts = (await client.get(f"{BASE}/stats")).json()["data"]
     assert counts["Draft"] == 1 and counts["Sent"] == 0
+
+
+async def test_saved_html_is_kept_when_design_is_empty(client):
+    campaign = await make_campaign(client)
+    custom = "<html><body><h1>Custom code</h1></body></html>"
+    updated = await client.patch(f"{BASE}/{campaign['id']}", json={"design": [], "html": custom})
+    assert updated.status_code == 200, updated.text
+    body = updated.json()["data"]
+    assert body["design"] == []
+    assert "Custom code" in body["html"]
+    again = (await client.get(f"{BASE}/{campaign['id']}")).json()["data"]
+    assert again["design"] == [] and "Custom code" in again["html"]

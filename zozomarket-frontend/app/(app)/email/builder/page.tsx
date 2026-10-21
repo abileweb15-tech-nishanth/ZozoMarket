@@ -126,6 +126,10 @@ function EmailBuilder() {
   const [recipientCount, setRecipientCount] = useState<number | null>(null)
   const [ready, setReady] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mode, setMode] = useState<'visual' | 'code'>('visual')
+  const [htmlSource, setHtmlSource] = useState('')
+  const [customHtml, setCustomHtml] = useState(false)
+  const blockHtmlRef = useRef('')
   const blocks = history[index] ?? []
   const selected = blocks.find((block) => block.id === selectedId) ?? null
   const readOnly = status === 'Sending' || status === 'Sent' || status === 'Failed'
@@ -165,10 +169,16 @@ function EmailBuilder() {
       setStatus(draft.status)
       setPickedTags(draft.audienceTags || [])
       setAudienceMode(draft.audienceTags?.length ? 'tags' : 'all')
-      const design = preserveSavedDesign(draft.design.length ? draft.design : blankDesign(workspace), workspace)
+      const hasBlocks = draft.design.length > 0
+      const design = preserveSavedDesign(hasBlocks ? draft.design : blankDesign(workspace), workspace)
       setHistory([design])
       setIndex(0)
       setSelectedId(design.find((block) => block.type === 'paragraph')?.id ?? design[0]?.id ?? null)
+      const savedHtml = draft.html || ''
+      const pasted = !hasBlocks && savedHtml.trim().length > 0
+      setHtmlSource(savedHtml)
+      setCustomHtml(pasted)
+      setMode(pasted ? 'code' : 'visual')
       setReady(true)
     }).catch((err: Error) => {
       if (active) toast.error(err.message)
@@ -185,7 +195,7 @@ function EmailBuilder() {
     fromName,
     fromEmail: fromEmail || null,
     replyTo: replyTo || null,
-    design: blocks,
+    ...(mode === 'code' || customHtml ? { html: htmlSource, design: [] as EmailBlock[] } : { design: blocks }),
   })
   const snapshotRef = useRef(snapshot())
   snapshotRef.current = snapshot()
@@ -210,7 +220,34 @@ function EmailBuilder() {
       persist().catch((err: Error) => toast.error(err.message))
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [ready, readOnly, campaignId, name, subject, preheader, fromName, fromEmail, replyTo, blocks])
+  }, [ready, readOnly, campaignId, name, subject, preheader, fromName, fromEmail, replyTo, blocks, mode, htmlSource, customHtml])
+
+  const openCode = async () => {
+    if (mode === 'code') return
+    if (customHtml && htmlSource.trim()) {
+      setMode('code')
+      return
+    }
+    try {
+      const rendered = await api.templates.render({ design: blocks, preheader })
+      blockHtmlRef.current = rendered.html
+      setHtmlSource(rendered.html)
+      setCustomHtml(false)
+      setMode('code')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not open the HTML')
+    }
+  }
+
+  const editHtml = (value: string) => {
+    setHtmlSource(value)
+    setCustomHtml(value !== blockHtmlRef.current)
+  }
+
+  const useBlocks = () => {
+    setCustomHtml(false)
+    setMode('visual')
+  }
 
   const commit = (next: EmailBlock[]) => {
     if (readOnly) return
@@ -320,13 +357,15 @@ function EmailBuilder() {
     setDialog(null)
   }
   const saveTemplate = async () => {
+    const fromCode = mode === 'code' || customHtml
+    if (fromCode && !htmlSource.trim()) throw new Error('Add HTML before saving this template')
     await persist()
     await api.templates.create({
       name: templateName.trim() || name,
       category: templateCategory,
       subject,
       preheader,
-      design: blocks,
+      ...(fromCode ? { html: htmlSource, design: [] } : { design: blocks }),
     })
     toast.success('Template saved')
     setDialog(null)
@@ -335,16 +374,17 @@ function EmailBuilder() {
     setPreviewContact(contactId)
     const contact = contacts.find((item) => item.id === contactId)
     const [first, ...rest] = (contact?.name || 'Alex Morgan').split(' ')
-    const rendered = await api.templates.render({
-      design: blocks,
-      preheader,
-      variables: {
-        first_name: first,
-        last_name: rest.join(' '),
-        name: contact?.name || 'Alex Morgan',
-        email: contact?.email || 'alex@example.com',
-      },
-    })
+    const variables = {
+      first_name: first,
+      last_name: rest.join(' '),
+      name: contact?.name || 'Alex Morgan',
+      email: contact?.email || 'alex@example.com',
+    }
+    if (mode === 'code' || customHtml) {
+      setPreviewHtml(htmlSource.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => variables[key as keyof typeof variables] ?? ''))
+      return
+    }
+    const rendered = await api.templates.render({ design: blocks, preheader, variables })
     setPreviewHtml(rendered.html)
   }
 
@@ -358,8 +398,9 @@ function EmailBuilder() {
           {readOnly ? status : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Not saved' : status}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="icon" aria-label="Undo" disabled={readOnly || index === 0} onClick={() => setIndex((current) => current - 1)}><Undo2 /></Button>
-          <Button variant="ghost" size="icon" aria-label="Redo" disabled={readOnly || index === history.length - 1} onClick={() => setIndex((current) => current + 1)}><Redo2 /></Button>
+          <Button variant="ghost" size="icon" aria-label="Undo" disabled={readOnly || mode === 'code' || customHtml || index === 0} onClick={() => setIndex((current) => current - 1)}><Undo2 /></Button>
+          <Button variant="ghost" size="icon" aria-label="Redo" disabled={readOnly || mode === 'code' || customHtml || index === history.length - 1} onClick={() => setIndex((current) => current + 1)}><Redo2 /></Button>
+          <Segmented label="Editor" value={mode === 'visual' ? 'Visual' : 'Code'} onChange={(value) => { if (value === 'Code') void openCode(); else setMode('visual') }} options={['Visual', 'Code'] as const} />
           <div role="group" aria-label="Preview device" className="flex rounded-lg border border-border p-0.5">
             <Button variant={device === 'Desktop' ? 'secondary' : 'ghost'} size="icon-sm" aria-label="Desktop preview" aria-pressed={device === 'Desktop'} onClick={() => setDevice('Desktop')}><Monitor /></Button>
             <Button variant={device === 'Mobile' ? 'secondary' : 'ghost'} size="icon-sm" aria-label="Mobile preview" aria-pressed={device === 'Mobile'} onClick={() => setDevice('Mobile')}><Smartphone /></Button>
@@ -384,6 +425,22 @@ function EmailBuilder() {
         <Field label="Reply-to"><Input aria-label="Reply-to" type="email" value={replyTo} disabled={readOnly} onChange={(event) => setReplyTo(event.target.value)} /></Field>
       </div>
 
+      {mode === 'code' ? (
+        <section aria-label="HTML code" className="flex flex-1 flex-col gap-3 bg-background p-4">
+          <p className="text-sm text-muted-foreground">This HTML is what gets sent. Visual shows this same HTML, and this code stays when you switch back.</p>
+          <Textarea aria-label="HTML code" spellCheck={false} value={htmlSource} disabled={readOnly} onChange={(event) => editHtml(event.target.value)} className="min-h-[480px] flex-1 font-mono text-xs" />
+        </section>
+      ) : customHtml ? (
+        <section aria-label="HTML preview" className="flex flex-1 flex-col gap-3 bg-muted p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">This preview is the HTML from Code. Switch back to Code and the same HTML is still there.</p>
+            <Button variant="outline" disabled={readOnly} onClick={useBlocks}>Use the previous blocks</Button>
+          </div>
+          <div className={cn('mx-auto w-full flex-1 overflow-hidden rounded-lg border border-border bg-white', device === 'Desktop' ? 'max-w-6xl' : 'max-w-[440px]')}>
+            <iframe title="HTML preview" sandbox="" srcDoc={htmlSource} className="h-[calc(100dvh-12rem)] min-h-[680px] w-full bg-white" />
+          </div>
+        </section>
+      ) : (
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-[220px_1fr_300px]">
         <aside aria-label="Content blocks" className="border-b border-border bg-background p-4 lg:border-r lg:border-b-0">
           <h2 className="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">Blocks</h2>
@@ -492,6 +549,7 @@ function EmailBuilder() {
           )}
         </aside>
       </div>
+      )}
 
       <Dialog open={dialog === 'test'} onOpenChange={(open) => !open && setDialog(null)}>
         <DialogContent>
@@ -578,7 +636,7 @@ function EmailBuilder() {
           <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); saveTemplate().catch((err: Error) => toast.error(err.message)) }}>
             <DialogHeader>
               <DialogTitle>Save as template</DialogTitle>
-              <DialogDescription>Stores this design for the current workspace.</DialogDescription>
+              <DialogDescription>{mode === 'code' || customHtml ? 'Stores this HTML for the current workspace.' : 'Stores this design for the current workspace.'}</DialogDescription>
             </DialogHeader>
             <Field label="Template name"><Input value={templateName} required onChange={(event) => setTemplateName(event.target.value)} /></Field>
             <Field label="Category"><NativeSelect label="Category" value={templateCategory} onChange={setTemplateCategory} options={['Newsletter', 'Promotional', 'Welcome Email', 'General']} /></Field>

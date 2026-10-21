@@ -3,10 +3,9 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { ChevronRight, CircleHelp, Menu, Search } from 'lucide-react'
+import { ChevronRight, CircleHelp, Menu } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuGroup,
 } from '@/components/ui/dropdown-menu'
@@ -56,11 +55,6 @@ export function AppHeader() {
       </nav>
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="relative hidden md:block">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input aria-label="Search" placeholder="Search campaigns, templates, contacts…" className="h-9 w-64 pl-9" />
-        </div>
-
         <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">{user?.workspaceName ?? 'Workspace'}</span>
 
         <ThemeToggle />

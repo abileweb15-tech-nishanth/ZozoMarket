@@ -47,3 +47,33 @@
 - **Tests performed**:
   - `.venv\Scripts\python.exe -m pytest tests/test_insights.py -q`
 - **Verification result**: `pytest tests/test_insights.py -q` — 6 passed.
+
+## Entry: 2026-10-21 - Pasted HTML disappeared when leaving Code
+
+- **Date**: 2026-10-21
+- **Error or symptom**: Pasting HTML in the email builder Code editor, then switching to Visual, still showed the old blocks. Opening Code again replaced the paste with the HTML rendered from those blocks.
+- **Root cause**: Visual always rendered the block list. Opening Code always called the block renderer and replaced the textarea.
+- **Solution**: After the HTML is edited, Visual shows that HTML, and Code keeps the same text. Saving stores the HTML with an empty block design. **Use the previous blocks** is the step that returns to the block canvas.
+- **Files affected**:
+  - `zozomarket-frontend/app/(app)/email/builder/page.tsx`
+  - `docs/frontend.md`
+  - `docs/backend.md`
+- **Tests performed**:
+  - Browser: open a draft, switch to Code, paste HTML with the heading “Pasted studio heading”, switch to Visual, switch back to Code, and read the saved campaign.
+- **Verification result**: Visual showed the pasted HTML. Code still contained “Pasted studio heading” and “Kept after visual.” The saved campaign had that HTML and an empty design.
+
+## Entry: 2026-10-21 - HTML emails could not be saved as templates
+
+- **Date**: 2026-10-21
+- **Error or symptom**: Save as template was unavailable while the email was custom HTML. A saved HTML template also could not come back as that HTML.
+- **Root cause**: The builder disabled Save as template for custom HTML and only sent the block design. Use Template always created a campaign from blocks, and an empty design was given a footer block that replaced the HTML.
+- **Solution**: Save as template stores the HTML with an empty design. Use Template creates the campaign from that HTML, and the builder opens it in Code.
+- **Files affected**:
+  - `zozomarket-frontend/app/(app)/email/builder/page.tsx`
+  - `zozomarket-frontend/app/(app)/email/templates/page.tsx`
+  - `zozomarket-frontend/lib/api.ts`
+  - `zozomarket-backend/tests/test_templates_media.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_templates_media.py -q`
+  - Browser: paste HTML, save it as “Saved code template”, then Use Template.
+- **Verification result**: `pytest tests/test_templates_media.py -q` — 5 passed. The saved template stored the HTML with an empty design. Use Template opened Code with `<h1>Saved code template</h1>`.

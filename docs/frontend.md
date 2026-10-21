@@ -50,7 +50,7 @@ zozomarket-frontend/
 │   └── page.tsx                # Root index page (redirects to /dashboard)
 ├── components/                 # Reusable UI components
 │   ├── app/                    # Domain-specific components
-│   │   ├── app-header.tsx      # Top bar (search, quick actions, user profile, theme toggle)
+│   │   ├── app-header.tsx      # Top bar (breadcrumb, workspace name, theme toggle, account menu)
 │   │   ├── app-sidebar.tsx     # Navigation sidebar with collapsible sections
 │   │   ├── charts.tsx          # Recharts wrappers (TrendChart, BarsChart)
 │   │   ├── create-new-menu.tsx # Quick-action dropdown (+ Create Campaign, Automation, Contact)
@@ -109,8 +109,8 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
   - Recent Campaigns and Upcoming Scheduled Email Dispatches tables.
 - **`calendar/page.tsx`**: Campaign Calendar tracking all scheduled email dispatches across dates and times. Filterable by type (*Newsletter*, *Promotional*, *Automated*, *Announcement*) in Month and List views.
 - **`email/campaigns/page.tsx`**: Email broadcast manager. Each saved draft appears here. Draft and Scheduled rows can change status.
-- **`email/builder/page.tsx`**: Visual email editor. Save draft stores the campaign and opens the campaign list. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
-- **`email/templates/page.tsx`**: Gallery of saved and starter layouts. Use Template creates a draft campaign and opens the builder. Delete removes a saved template. Starter layouts stay.
+- **`email/builder/page.tsx`**: Visual email editor and an HTML code editor. Pasting HTML in Code makes Visual show that HTML in a wide preview that fills the builder height, and switching back to Code keeps the same HTML. Saving that HTML clears the block design so a test send and a schedule send the HTML. Save as template stores that HTML when Code is the email being edited. **Use the previous blocks** returns to the block canvas, and the next save sends those blocks. Save draft stores the campaign and opens the campaign list. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
+- **`email/templates/page.tsx`**: Gallery of saved and starter layouts. Use Template creates a draft campaign and opens the builder. An HTML template opens in Code with that HTML. Delete removes a saved template. Starter layouts stay.
 - **`contacts/page.tsx`**: Audience CRM with bulk tagging, bulk deletion, search, subscriber status filters (*Subscribed*, *Pending*, *Unsubscribed*), and contact creation dialog. The Collected column shows answers stored from a form.
 - **`forms/page.tsx`**: Signup forms, embedded forms, and popup forms. Landing pages are the same as signup forms, so they are listed and saved as signup forms. Each row has its own link, `/f/{slug}`, with Copy and Open. Edit opens the saved form so the title, fields, tags, and success message can be updated. Delete removes the form and leaves existing contacts. Set Live publishes the link.
 - **`media/page.tsx`**: Digital asset manager for uploading, organizing, and selecting images and graphics used in email campaigns. Delete asks for confirmation, then removes the file.
@@ -135,7 +135,7 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 - Built on `@base-ui/react` and Radix standards.
 
 #### 2. Domain Components (`components/app/`)
-- **`app-header.tsx`**: Search input, workspace switcher, notification drawer, and theme toggle.
+- **`app-header.tsx`**: Breadcrumb, workspace name, help, theme toggle, and account menu.
 - **`app-sidebar.tsx`**: Collapsible vertical navigation based on `lib/nav.ts`.
 - **`create-new-menu.tsx`**: "+ Create New" action menu with shortcuts (*Create Campaign*, *New Automation*, *Add Contact*).
 - **`charts.tsx`**: Recharts wrappers (`TrendChart`, `BarsChart`) with theme-aware colors and responsive SVG containers.
