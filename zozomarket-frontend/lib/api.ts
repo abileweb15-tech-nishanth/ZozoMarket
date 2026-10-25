@@ -112,6 +112,62 @@ export type DashboardKPIs = {
   scheduledCampaigns: Kpi
 }
 
+export type AutomationStatus = 'Draft' | 'Active' | 'Paused' | 'Archived'
+
+export type FlowNode = {
+  id: string
+  kind: string
+  label: string
+  config: Record<string, unknown>
+  position: { x: number; y: number }
+}
+
+export type FlowEdge = {
+  id: string
+  source: string
+  target: string
+  sourceHandle?: string | null
+}
+
+export type Automation = {
+  id: string
+  name: string
+  description: string
+  trigger: string
+  triggerType: string
+  triggerConfig: Record<string, unknown>
+  audience: string
+  status: AutomationStatus
+  updated: string
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+  enrolledCount: number
+  completedCount: number
+  emailsSent: number
+  createdAt: string
+}
+
+export type AutomationEnrollment = {
+  id: string
+  contactId: string
+  contactName: string
+  contactEmail: string
+  status: string
+  currentNodeId: string | null
+  nextRunAt: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
+export type AutomationStep = {
+  id: string
+  enrollmentId: string
+  nodeId: string
+  action: string
+  result: string
+  createdAt: string
+}
+
 export type FormField = {
   name: string
   label: string
@@ -388,5 +444,25 @@ export const api = {
     view: (slug: string) => publicRequest<unknown>(`/public/forms/${slug}/view`, { method: 'POST', body: '{}' }),
     submit: (slug: string, data: { name: string; email: string; consent: boolean; fields?: Record<string, string> }) =>
       publicRequest<{ message: string; redirectUrl: string | null; requiresConfirmation: boolean }>(`/public/forms/${slug}/submit`, { method: 'POST', body: JSON.stringify(data) }),
+  },
+
+  automations: {
+    list: () => request<Automation[]>(`/automations?${page}`),
+    get: (id: string) => request<Automation>(`/automations/${id}`),
+    create: (data: { name: string; description?: string; trigger?: string; triggerType?: string; triggerConfig?: Record<string, unknown>; nodes?: Omit<FlowNode, 'id'>[]; edges?: Omit<FlowEdge, 'id'>[] }) =>
+      request<Automation>('/automations', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Pick<Automation, 'name' | 'description' | 'trigger' | 'triggerType' | 'triggerConfig' | 'audience' | 'nodes' | 'edges'>>) =>
+      request<Automation>(`/automations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    activate: (id: string) => request<Automation>(`/automations/${id}/activate`, { method: 'POST' }),
+    pause: (id: string) => request<Automation>(`/automations/${id}/pause`, { method: 'POST' }),
+    archive: (id: string) => request<Automation>(`/automations/${id}/archive`, { method: 'POST' }),
+    duplicate: (id: string) => request<Automation>(`/automations/${id}/duplicate`, { method: 'POST' }),
+    remove: (id: string) => request<unknown>(`/automations/${id}`, { method: 'DELETE' }).then(() => ({ success: true })),
+    validate: (id: string) => request<{ ok: boolean; problems: { nodeId: string | null; message: string }[] }>(`/automations/${id}/validate`, { method: 'POST' }),
+    test: (id: string, email: string, nodeId?: string) =>
+      request<{ enrolled: number }>(`/automations/${id}/test`, { method: 'POST', body: JSON.stringify({ email, ...(nodeId ? { nodeId } : {}) }) }),
+    stats: (id: string) => request<Record<string, number>>(`/automations/${id}/stats`),
+    enrollments: (id: string) => request<AutomationEnrollment[]>(`/automations/${id}/enrollments?${page}`),
+    steps: (id: string) => request<AutomationStep[]>(`/automations/${id}/steps?${page}`),
   },
 }

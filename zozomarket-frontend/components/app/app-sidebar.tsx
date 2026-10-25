@@ -42,7 +42,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
                 {!isCollapsed && (
                   <ul id={id} className="mt-1 flex flex-col gap-0.5">
                     {group.items.map((item) => {
-                      const active = pathname.startsWith(item.href)
+                      const active = pathname.startsWith(item.href) || (item.href === '/email/campaigns' && pathname.startsWith('/email/builder'))
                       const Icon = item.icon
                       return (
                         <li key={item.href}>

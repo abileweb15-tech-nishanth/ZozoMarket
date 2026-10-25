@@ -77,3 +77,36 @@
   - `.venv\Scripts\python.exe -m pytest tests/test_templates_media.py -q`
   - Browser: paste HTML, save it as “Saved code template”, then Use Template.
 - **Verification result**: `pytest tests/test_templates_media.py -q` — 5 passed. The saved template stored the HTML with an empty design. Use Template opened Code with `<h1>Saved code template</h1>`.
+
+## Entry: 2026-10-23 - A waiting automation never resumed
+
+- **Date**: 2026-10-23
+- **Error or symptom**: A delay step stored `next_run_at` on the enrollment, and the contact stayed there after the wait elapsed.
+- **Root cause**: `scheduler_tick` claimed due campaigns and never called `process_due_enrollments`.
+- **Solution**: The same tick claims due enrollments for Active automations and continues the graph. Pause leaves those rows unclaimed. Tag changes during a tick use the contact's workspace.
+- **Files affected**:
+  - `zozomarket-backend/app/workers/jobs.py`
+  - `zozomarket-backend/app/services/automation_service.py`
+  - `zozomarket-backend/tests/test_automations.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_automations.py -q`
+- **Verification result**: `pytest tests/test_automations.py -q` — 4 passed. The funnel test sends, waits, resumes on a later tick, and takes the click branch.
+
+## Entry: 2026-10-23 - New automation steps landed off screen, and the test ignored the chosen email
+
+- **Date**: 2026-10-23
+- **Error or symptom**: Adding a step from the left list placed the box below the visible canvas. An email step could not use a saved template. The test sent the first email by list order, not the one the user built or picked.
+- **Root cause**: The free canvas placed new nodes at a fixed offset under the last node. The email settings had only subject and HTML fields. `send_test` took the first Email node in `nodes` and ignored the edges.
+- **Solution**: The builder is now a vertical flow. Each step has a + button below it, positions are computed, and a Condition splits into Yes and No columns. The email drawer shows saved and starter templates with previews. `/test` takes a `nodeId` and sends that step. Without a `nodeId`, it sends the first email reached from the trigger along the edges. The subject falls back to the template's subject, and a provider failure returns a readable 409. Tag steps without a tag fail validation.
+- **Files affected**:
+  - `zozomarket-frontend/lib/automation-tree.ts`
+  - `zozomarket-frontend/components/automations/builder.tsx`
+  - `zozomarket-frontend/components/automations/steps.ts`
+  - `zozomarket-frontend/components/automations/email-step.tsx`
+  - `zozomarket-backend/app/services/automation_service.py`
+  - `zozomarket-backend/app/schemas/automation.py`
+  - `zozomarket-backend/tests/test_automations.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_automations.py -q`
+  - Browser: built trigger, email with Autumn note, wait 1 day, condition clicked, Yes add tag, No end. Saved, reloaded, activated, then cleared the subject on a written-HTML email.
+- **Verification result**: `pytest tests/test_automations.py -q` — 5 passed. After reload the same tree appeared. Activate set the automation live. The cleared subject showed a red badge on the email card, and Activate was refused with "Fix 1 problem before activating". The test send reached Mailtrap, which refused the seeded `@example.com` owner address because demo domains only deliver to the Mailtrap account owner; the builder showed that message.

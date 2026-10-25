@@ -12,7 +12,7 @@ ZozoMarket is an enterprise-grade marketing SaaS application focused on automate
 |  +-------------------------------------------------------------------------+  |
 |  |                           Next.js App Router                            |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
-|  |  |   Dashboard & KPI  |  |   Email Campaigns    |  |  Email Builder  |  |  |
+|  |  |   Dashboard & KPI  |  |   Email Campaigns    |  | Email Automation |  |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
 |  |  |   Contacts & CRM   |  |  Forms & Lead Gen    |  |  Media Library  |  |  |
 |  |  +--------------------+  +----------------------+  +-----------------+  |  |
@@ -44,14 +44,14 @@ ZozoMarket is an enterprise-grade marketing SaaS application focused on automate
 |  |                      FastAPI REST Routers (/api/v1)                     |  |
 |  |  - /auth, /workspace: Account, brand, and sending identity              |  |
 |  |  - /dashboard, /analytics: KPIs; Mailtrap stats when that provider is on|  |
-|  |  - /campaigns, /templates: Builder HTML, schedule, test, and dispatch   |  |
+|  |  - /campaigns, /templates, /automations: send, schedule, and funnels    |  |
 |  |  - /contacts, /forms, /media, /calendar                             |  |
 |  |  - /t/* and /webhooks/email: Opens, clicks, unsubscribe, bounces        |  |
 |  +-------------------------------------------------------------------------+  |
 |                                     |                                         |
 |  +-------------------------------------------------------------------------+  |
 |  |                           Service Layer                                 |  |
-|  |  - campaign, template, contact, form, media, workspace                  |  |
+|  |  - campaign, template, automation, contact, form, media, workspace      |  |
 |  |  - email_service.py: console, smtp, resend, mailtrap                    |  |
 |  |  - analytics_service.py and mailtrap_stats.py: local and Mailtrap totals|  |
 |  +-------------------------------------------------------------------------+  |
@@ -59,7 +59,7 @@ ZozoMarket is an enterprise-grade marketing SaaS application focused on automate
 |  +-------------------------------------------------------------------------+  |
 |  |                     Database & Background Workers                       |  |
 |  |  - Database: PostgreSQL (asyncpg). SQLite is used only by the test suite |  |
-|  |  - Workers: Asyncio in-process scheduler (dev) / Celery + Redis (prod)  |  |
+|  |  - Scheduler resumes due campaigns and automation waits from Postgres   |  |
 |  +-------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------+
 ```

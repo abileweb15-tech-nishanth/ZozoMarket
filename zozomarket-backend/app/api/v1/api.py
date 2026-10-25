@@ -4,6 +4,7 @@ from app.api.deps import require_user
 from app.api.v1.endpoints import (
     analytics,
     auth,
+    automations,
     calendar,
     campaigns,
     contacts,
@@ -26,6 +27,7 @@ for module in (
     forms,
     media,
     analytics,
+    automations,
     workspace,
 ):
     private_router.include_router(module.router)

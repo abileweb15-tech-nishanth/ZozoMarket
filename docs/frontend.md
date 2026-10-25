@@ -108,9 +108,13 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
   - Campaign open-rate vs click-rate bar comparison.
   - Recent Campaigns and Upcoming Scheduled Email Dispatches tables.
 - **`calendar/page.tsx`**: Campaign Calendar tracking all scheduled email dispatches across dates and times. Filterable by type (*Newsletter*, *Promotional*, *Automated*, *Announcement*) in Month and List views.
-- **`email/campaigns/page.tsx`**: Email broadcast manager. Each saved draft appears here. Draft and Scheduled rows can change status.
+- **`email/campaigns/page.tsx`**: Email broadcast manager. Create Email Campaign opens the email builder. Each saved draft appears here, and its name or Edit opens that campaign in the builder. Draft and Scheduled rows can change status. The builder is not a sidebar item.
 - **`email/builder/page.tsx`**: Visual email editor and an HTML code editor. Pasting HTML in Code makes Visual show that HTML in a wide preview that fills the builder height, and switching back to Code keeps the same HTML. Saving that HTML clears the block design so a test send and a schedule send the HTML. Save as template stores that HTML when Code is the email being edited. **Use the previous blocks** returns to the block canvas, and the next save sends those blocks. Save draft stores the campaign and opens the campaign list. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
 - **`email/templates/page.tsx`**: Gallery of saved and starter layouts. Use Template creates a draft campaign and opens the builder. An HTML template opens in Code with that HTML. Delete removes a saved template. Starter layouts stay.
+- **`email/automations/page.tsx`**: Search, status filter, and a table of funnels (name, trigger, status, enrolled, completed, updated). New automation opens the builder. Row actions edit, duplicate, activate, pause, archive, send a test of the first email on the flow, and delete.
+- **`email/automations/[id]/page.tsx`**: Loads `components/automations/builder.tsx`, a vertical flow that starts at the trigger and lays itself out. A + between steps opens a picker grouped as Messages, Timing, Conditions, Contact actions, and Exit. A new step goes between the step above and the step below. A condition splits into Yes and No columns; the steps that were below it continue on Yes, and No gets an End. Deleting a step joins the steps around it. Deleting a condition removes both branches. End can only go at the end of a path. Steps the trigger cannot reach (from older drafts) are listed as Unconnected steps with Move onto the flow and Delete. Clicking a step opens a side drawer with its settings. After each save, `POST /validate` marks steps that need fixing with a red count and lists the rest in a banner. Activate saves first and runs only when nothing needs fixing. Active funnels show Save changes and Pause. The browser warns before leaving with unsaved changes.
+- **`components/automations/email-step.tsx`**: Email step drawer. Subject, then Template or Write HTML. Template shows thumbnails of saved templates and starter layouts. Picking a starter saves a copy with `api.templates.create` and uses it. A template fills the subject when it is empty. The preview shows the chosen template or the HTML. Send test saves the draft, then sends this step to one address with `api.automations.test(id, email, nodeId)`.
+- **`email/automations/[id]/activity/page.tsx`**: Enrollment counts, people in the funnel with their current step name and next run time, and a step log with contact, step name, readable action, and result.
 - **`contacts/page.tsx`**: Audience CRM with bulk tagging, bulk deletion, search, subscriber status filters (*Subscribed*, *Pending*, *Unsubscribed*), and contact creation dialog. The Collected column shows answers stored from a form.
 - **`forms/page.tsx`**: Signup forms, embedded forms, and popup forms. Landing pages are the same as signup forms, so they are listed and saved as signup forms. Each row has its own link, `/f/{slug}`, with Copy and Open. Edit opens the saved form so the title, fields, tags, and success message can be updated. Delete removes the form and leaves existing contacts. Set Live publishes the link.
 - **`media/page.tsx`**: Digital asset manager for uploading, organizing, and selecting images and graphics used in email campaigns. Delete asks for confirmation, then removes the file.
@@ -136,7 +140,7 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 
 #### 2. Domain Components (`components/app/`)
 - **`app-header.tsx`**: Breadcrumb, workspace name, help, theme toggle, and account menu.
-- **`app-sidebar.tsx`**: Collapsible vertical navigation based on `lib/nav.ts`.
+- **`app-sidebar.tsx`**: Collapsible vertical navigation based on `lib/nav.ts`. Email Marketing lists Email Campaigns, Email Templates, and Email Automation. The builder opens from Create Email Campaign. The funnel builder opens from Email Automation.
 - **`create-new-menu.tsx`**: "+ Create New" action menu with shortcuts (*Create Campaign*, *New Automation*, *Add Contact*).
 - **`charts.tsx`**: Recharts wrappers (`TrendChart`, `BarsChart`) with theme-aware colors and responsive SVG containers.
 - **`shared.tsx`**: Reusable design system widgets (`PageHeader`, `KpiCard`, `Panel`, `StatusBadge`, `SearchInput`, `NativeSelect`, `Segmented`, `TableWrap`, `EmptyState`, `ConfirmDialog`).
@@ -150,7 +154,7 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 
 #### 2. Async Client Service (`lib/api.ts`)
 - Async service isolating UI pages from the transport layer.
-- Methods: `api.dashboard.getKPIs()`, `api.campaigns.*`, `api.contacts.*`, `api.forms.list/create/update/delete/submit`, `api.calendar.*`, `api.analytics.*`, `api.media.*`.
+- Methods: `api.dashboard.getKPIs()`, `api.campaigns.*`, `api.contacts.*`, `api.forms.list/create/update/delete/submit`, `api.automations.*`, `api.calendar.*`, `api.analytics.*`, `api.media.*`.
 - Persists mutations in browser `localStorage`.
 - Ready to be swapped for real Python FastAPI backend calls without touching React component code.
 

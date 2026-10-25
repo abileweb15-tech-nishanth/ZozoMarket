@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks
 
 from app.core import database
 from app.core.config import settings
-from app.services import campaign_service
+from app.services import automation_service, campaign_service
 
 logger = logging.getLogger(__name__)
 _running: set[asyncio.Task] = set()
@@ -36,9 +36,11 @@ async def scheduler_tick() -> dict[str, int]:
             task = asyncio.create_task(dispatch_campaign(campaign_id))
             _running.add(task)
             task.add_done_callback(_running.discard)
-    if claimed:
-        logger.info("Scheduler tick: %d campaign(s) dispatched", len(claimed))
-    return {"campaigns": len(claimed)}
+    async with database.SessionLocal() as session:
+        resumed = await automation_service.process_due_enrollments(session)
+    if claimed or resumed:
+        logger.info("Scheduler tick: %d campaign(s), %d automation step(s)", len(claimed), resumed)
+    return {"campaigns": len(claimed), "automations": resumed}
 
 
 def _send_celery(campaign_id: str) -> None:

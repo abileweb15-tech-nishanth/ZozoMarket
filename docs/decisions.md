@@ -34,3 +34,16 @@
 - **Context**: The dashboard, email builder, navigation, and API exposed an AI assistant, sample recommendations, and a copywriter backed by a mock or third-party model.
 - **Decision**: Remove those screens, client methods, and the `/api/v1/ai` routes. Email composition stays in the visual builder.
 - **Consequences**: `POST /ai/generate`, `/ai/subject-lines`, and `/ai/preheaders` are gone. OpenAI and Anthropic settings are no longer read.
+
+## ADR-004: Email funnels reuse the existing send path
+
+- **Date**: 2026-10-23
+- **Status**: Accepted
+- **Context**: Automations were a straight list of steps. A delay stored `next_run_at`, but the scheduler never resumed it, and there was no canvas.
+- **Decision**:
+  1. Store the canvas as `nodes` and `edges` on the automation. Activating copies that graph onto each new enrollment.
+  2. One contact enters an automation once. Audience actions are tag add and tag remove.
+  3. Resume waits from PostgreSQL on the existing scheduler. Do not add Redis for delays.
+  4. The builder is a vertical flow, as in FluentCRM, ActiveCampaign, and Mailchimp Customer Journeys. Steps lay themselves out from the trigger, a + between steps adds the next one, and a condition splits into Yes and No columns that do not merge. It is plain React. The earlier `@xyflow/react` free canvas was removed (2026-10-23) because new steps landed off screen and every connection had to be dragged by hand.
+  5. Order, cart, purchase, and website triggers stay visible and disabled.
+- **Consequences**: People already in a funnel keep the graph they started with. A paused automation does not claim due rows. The stored graph is always a tree, so positions are computed rather than edited.

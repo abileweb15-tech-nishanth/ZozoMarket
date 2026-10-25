@@ -65,6 +65,7 @@ const tone: Record<string, string> = {
 }
 const statusTone: Record<string, keyof typeof tone> = {
   Sent: 'success', Published: 'success', Active: 'success', Connected: 'success', Subscribed: 'success', Paid: 'success', Live: 'success', Verified: 'success',
+  Completed: 'success', 'In progress': 'info', Exited: 'neutral', Archived: 'neutral',
   Scheduled: 'info', Sending: 'warning', Paused: 'warning', 'Needs attention': 'warning', Pending: 'warning', 'Sandbox': 'warning',
   Failed: 'error', Unsubscribed: 'error', Disconnected: 'neutral', Draft: 'neutral', 'Not connected': 'neutral',
 }
