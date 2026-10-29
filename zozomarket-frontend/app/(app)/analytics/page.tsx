@@ -49,8 +49,8 @@ export default function EmailAnalyticsPage() {
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <KpiCard label="Delivered emails" value={kpis?.emailsDelivered.value ?? '—'} trend={kpis?.emailsDelivered.trend ?? 0} icon={MailCheck} />
-          <KpiCard label="Avg. open rate" value={kpis?.emailOpenRate.value ?? '—'} trend={kpis?.emailOpenRate.trend ?? 0} icon={MailOpen} />
-          <KpiCard label="Avg. click rate" value={kpis?.avgClickRate.value ?? '—'} trend={kpis?.avgClickRate.trend ?? 0} icon={MousePointerClick} />
+          <KpiCard label="Avg. open rate" value={kpis?.emailOpenRate.value ?? '—'} detail={kpis?.emailOpenRate.detail} trend={kpis?.emailOpenRate.trend ?? 0} icon={MailOpen} />
+          <KpiCard label="Avg. click rate" value={kpis?.avgClickRate.value ?? '—'} detail={kpis?.avgClickRate.detail} trend={kpis?.avgClickRate.trend ?? 0} icon={MousePointerClick} />
         </div>
       </section>
 

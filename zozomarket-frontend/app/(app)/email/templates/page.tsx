@@ -87,12 +87,16 @@ export default function TemplatesPage() {
   }
 
   const openPreview = async (item: Card) => {
-    const ready = thumbs[item.id] || ''
     setPreview(item)
-    setPreviewHtml(ready)
-    if (ready) return
+    if (!item.saved && thumbs[item.id]) {
+      setPreviewHtml(thumbs[item.id])
+      return
+    }
+    setPreviewHtml('')
     try {
-      setPreviewHtml(await loadHtml(item))
+      const html = item.saved ? await api.templates.previewHtml(item.id) : await loadHtml(item)
+      if (item.saved) setThumbs((current) => ({ ...current, [item.id]: html }))
+      setPreviewHtml(html)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not preview this template')
     }
@@ -141,7 +145,7 @@ export default function TemplatesPage() {
             <li key={item.id} className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
               <button type="button" aria-label={`Preview ${item.name}`} onClick={() => { void openPreview(item) }} className="relative aspect-[3/4] overflow-hidden bg-white text-left">
                 {thumbs[item.id] ? (
-                  <iframe title="" sandbox="" srcDoc={thumbs[item.id]} tabIndex={-1} className="pointer-events-none absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 border-0 bg-white" />
+                  <iframe key={thumbs[item.id]} title="" sandbox="" srcDoc={thumbs[item.id]} tabIndex={-1} className="pointer-events-none absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 border-0 bg-white" />
                 ) : (
                   <span className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading preview…</span>
                 )}
@@ -155,7 +159,10 @@ export default function TemplatesPage() {
                   <Button variant="outline" onClick={() => { void openPreview(item) }}>Preview</Button>
                   <Button disabled={busy} onClick={() => { void useTemplate(item) }}>Use Template</Button>
                   {item.saved && (
-                    <Button variant="outline" className="col-span-2" onClick={() => setToDelete(item)}>Delete</Button>
+                    <Button variant="outline" onClick={() => router.push(`/email/builder?template=${item.id}`)}>Edit</Button>
+                  )}
+                  {item.saved && (
+                    <Button variant="outline" onClick={() => setToDelete(item)}>Delete</Button>
                   )}
                 </div>
               </div>
@@ -176,6 +183,9 @@ export default function TemplatesPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreview(null)}>Close</Button>
+            {preview?.saved && (
+              <Button variant="outline" onClick={() => router.push(`/email/builder?template=${preview.id}`)}>Edit</Button>
+            )}
             {preview?.saved && <Button variant="outline" onClick={() => { setToDelete(preview); setPreview(null) }}>Delete</Button>}
             <Button disabled={busy} onClick={() => preview && void useTemplate(preview)}>Use Template</Button>
           </DialogFooter>

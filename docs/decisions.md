@@ -47,3 +47,22 @@
   4. The builder is a vertical flow, as in FluentCRM, ActiveCampaign, and Mailchimp Customer Journeys. Steps lay themselves out from the trigger, a + between steps adds the next one, and a condition splits into Yes and No columns that do not merge. It is plain React. The earlier `@xyflow/react` free canvas was removed (2026-10-23) because new steps landed off screen and every connection had to be dragged by hand.
   5. Order, cart, purchase, and website triggers stay visible and disabled.
 - **Consequences**: People already in a funnel keep the graph they started with. A paused automation does not claim due rows. The stored graph is always a tree, so positions are computed rather than edited.
+
+## ADR-005: Send mail with Amazon SES v2
+
+- **Date**: 2026-10-26
+- **Status**: Accepted
+- **Context**: Outbound mail went through Mailtrap, which is a testing inbox. The verified production identity is an SES email address in `us-east-1`, with a configuration set for delivery events.
+- **Decision**:
+  1. `EMAIL_PROVIDER=ses` sends with `boto3` client `sesv2`. SMTP and the Mailtrap client are removed.
+  2. Keys, region, From address, and configuration set come from the environment. The From address is always `SES_FROM_EMAIL`. Reply-To stays the workspace reply-to.
+  3. Workspace-wide delivered, delivery, open, and click figures come from CloudWatch metrics on the configuration set (`campaign` = `zozomarket`). Each send includes that message tag. Subscribers, scheduled campaigns, and one campaign's own chart stay in the database. If CloudWatch cannot be read, the mail figures fall back to local rows.
+- **Consequences**: In the SES sandbox, a recipient must be a verified identity or the send is rejected. Restart the API after changing `.env`, because the sender is cached.
+
+## ADR-006: Collect the sending profile at signup
+
+- **Date**: 2026-10-28
+- **Status**: Accepted
+- **Context**: A new account stored only a name and an optional workspace name. The mailing address, time zone, and from address — the details a campaign needs — were left blank until Workspace Settings.
+- **Decision**: `POST /auth/signup` requires the workspace name, physical mailing address, from name, and from email, and accepts website, time zone, and reply-to. Brand color, font, logo, and tracking stay at their defaults and are still edited in Workspace Settings.
+- **Consequences**: A signup that omits those fields is rejected. Existing accounts are unchanged.

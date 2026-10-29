@@ -179,6 +179,9 @@ async def test_other_workspace_cannot_read_the_automation(client):
             "email": "other-auto@example.com",
             "password": "password123",
             "workspaceName": "Other Workspace",
+            "mailingAddress": "1 Market Street",
+            "fromName": "Other Workspace",
+            "fromEmail": "other-auto-from@example.com",
         },
     )
     token = other.json()["data"]["accessToken"]

@@ -1,6 +1,6 @@
 """Signup, login, and profile for a single workspace per account."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -13,7 +13,9 @@ from app.core.security import (
     verify_password,
 )
 from app.models.account import User, Workspace
+from app.models.media import MediaAsset
 from app.schemas.auth import AuthSession, LoginRequest, ProfileUpdate, SignupRequest, UserRead
+from app.services.media_service import get_storage
 
 
 def _session(user: User) -> AuthSession:
@@ -34,7 +36,15 @@ async def signup(session: AsyncSession, data: SignupRequest) -> AuthSession:
     existing = await session.scalar(select(User.id).where(User.email == email))
     if existing:
         raise ConflictError("An account with this email already exists")
-    workspace = Workspace(name=(data.workspace_name or f"{data.name}'s workspace").strip())
+    workspace = Workspace(
+        name=data.workspace_name.strip(),
+        website=data.website.strip() if data.website else None,
+        timezone=data.timezone,
+        mailing_address=data.mailing_address.strip(),
+        from_name=data.from_name.strip(),
+        from_email=str(data.from_email).strip().lower(),
+        reply_to=str(data.reply_to).strip().lower() if data.reply_to else None,
+    )
     session.add(workspace)
     await session.flush()
     user = User(
@@ -82,3 +92,20 @@ async def update_profile(session: AsyncSession, user: User, data: ProfileUpdate)
     await session.commit()
     await session.refresh(user)
     return user
+
+
+async def delete_account(session: AsyncSession, user: User, password: str) -> None:
+    if not verify_password(password, user.password_hash):
+        raise UnauthorizedError("Password is incorrect")
+    workspace_id = user.workspace_id
+    assets = (
+        await session.scalars(select(MediaAsset).where(MediaAsset.workspace_id == workspace_id))
+    ).all()
+    storage = get_storage()
+    for asset in assets:
+        if asset.storage_key:
+            await storage.delete(asset.storage_key)
+    # Break the owner cycle, then delete the workspace so tenant rows and the user cascade.
+    await session.execute(update(Workspace).where(Workspace.id == workspace_id).values(owner_id=None))
+    await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+    await session.commit()

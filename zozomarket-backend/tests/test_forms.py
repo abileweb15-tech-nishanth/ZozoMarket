@@ -113,6 +113,9 @@ async def test_same_name_in_another_workspace_gets_its_own_slug(client, anon_cli
             "email": "other-forms@example.com",
             "password": "correct-horse",
             "workspaceName": "Other Studio",
+            "mailingAddress": "1 Market Street",
+            "fromName": "Other Studio",
+            "fromEmail": "other-forms-from@example.com",
         },
     )
     token = other.json()["data"]["accessToken"]

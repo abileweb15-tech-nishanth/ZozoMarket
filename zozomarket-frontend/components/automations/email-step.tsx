@@ -147,7 +147,7 @@ export function EmailStepSettings({ automationId, node, templates, workspace, on
       <div className="flex flex-col gap-1.5">
         <p className="text-sm font-medium">Preview</p>
         {previewHtml ? (
-          <iframe title="Email preview" sandbox="" srcDoc={previewHtml} className="h-80 w-full rounded-lg border border-border bg-white" />
+          <iframe key={previewHtml} title="Email preview" sandbox="" srcDoc={previewHtml} className="h-80 w-full rounded-lg border border-border bg-white" />
         ) : (
           <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
             {mode === 'Template' ? 'Pick a template to preview it.' : 'Write some HTML to preview it.'}

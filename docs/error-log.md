@@ -48,6 +48,35 @@
   - `.venv\Scripts\python.exe -m pytest tests/test_insights.py -q`
 - **Verification result**: `pytest tests/test_insights.py -q` — 6 passed.
 
+## Entry: 2026-10-27 - Edited HTML reverted to the old blocks
+
+- **Date**: 2026-10-27
+- **Error or symptom**: Changing the HTML in Code, then opening Visual or Preview, showed the email from before the edit. Opening Code again could put the old HTML back.
+- **Root cause**: The builder kept the block list and the HTML as two copies. Leaving Code saved the blocks, and the API rebuilt `html` from them. A block render that finished after typing replaced the textarea.
+- **Solution**: The first Code edit marks the HTML as the only source for Visual, Preview, and save. A late render is ignored. **Use the previous blocks** is what returns to the block canvas. An update that does not send a design leaves saved HTML in place.
+- **Files affected**:
+  - `zozomarket-frontend/app/(app)/email/builder/page.tsx`
+  - `zozomarket-frontend/components/automations/email-step.tsx`
+  - `zozomarket-backend/tests/test_campaigns.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_campaigns.py -q`
+- **Verification result**: `pytest tests/test_campaigns.py -q` — 10 passed. Saved HTML stays after a rename. Sending a design again replaces it with the block HTML.
+
+## Entry: 2026-10-28 - Saved template preview kept the original HTML
+
+- **Date**: 2026-10-28
+- **Error or symptom**: Editing a saved template’s HTML, then previewing that template, still showed the HTML from before the edit.
+- **Root cause**: Use Template copied the layout into a new campaign and never wrote the template. The gallery also kept the first preview it loaded. The app had no call to `PATCH /templates/{id}`.
+- **Solution**: Edit opens the builder on the saved template and saves `html` with an empty design when Code is the source. Preview fetches `/preview.html` again and replaces the card thumbnail. A campaign that came from a template can write the current email back with Update template.
+- **Files affected**:
+  - `zozomarket-frontend/app/(app)/email/builder/page.tsx`
+  - `zozomarket-frontend/app/(app)/email/templates/page.tsx`
+  - `zozomarket-frontend/lib/api.ts`
+  - `zozomarket-backend/tests/test_templates_media.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_templates_media.py -q`
+- **Verification result**: `pytest tests/test_templates_media.py -q` — 6 passed. Edit opened Saved code template in Code. After the heading was changed to “Edited template heading”, the saved template stored that HTML with an empty design, the gallery card showed it, and `preview.html` returned it. Autumn note was left unchanged.
+
 ## Entry: 2026-10-21 - Pasted HTML disappeared when leaving Code
 
 - **Date**: 2026-10-21
@@ -110,3 +139,16 @@
   - `.venv\Scripts\python.exe -m pytest tests/test_automations.py -q`
   - Browser: built trigger, email with Autumn note, wait 1 day, condition clicked, Yes add tag, No end. Saved, reloaded, activated, then cleared the subject on a written-HTML email.
 - **Verification result**: `pytest tests/test_automations.py -q` — 5 passed. After reload the same tree appeared. Activate set the automation live. The cleared subject showed a red badge on the email card, and Activate was refused with "Fix 1 problem before activating". The test send reached Mailtrap, which refused the seeded `@example.com` owner address because demo domains only deliver to the Mailtrap account owner; the builder showed that message.
+
+## Entry: 2026-10-26 - Open rate showed 175% after every email was opened
+
+- **Date**: 2026-10-26
+- **Error or symptom**: Four delivered emails that were all opened showed an average open rate of 175%.
+- **Root cause**: SES CloudWatch counts every open event. The dashboard divided 7 events by 4 deliveries.
+- **Solution**: Each SES day's opens and clicks are capped at that day's deliveries before the rate and the email-trend chart are built.
+- **Files affected**:
+  - `zozomarket-backend/app/services/analytics_service.py`
+  - `zozomarket-backend/tests/test_insights.py`
+- **Tests performed**:
+  - `.venv\Scripts\python.exe -m pytest tests/test_insights.py tests/test_core.py -q`
+- **Verification result**: `pytest tests/test_insights.py tests/test_core.py -q` — 20 passed. Seven open events and four deliveries produce an open rate of 100%, and the performance series reports 4 opens for that day.

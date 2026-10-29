@@ -43,7 +43,7 @@ ZozoMarket is an enterprise-grade marketing SaaS application focused on automate
 |  +-------------------------------------------------------------------------+  |
 |  |                      FastAPI REST Routers (/api/v1)                     |  |
 |  |  - /auth, /workspace: Account, brand, and sending identity              |  |
-|  |  - /dashboard, /analytics: KPIs; Mailtrap stats when that provider is on|  |
+|  |  - /dashboard, /analytics: mail KPIs from SES CloudWatch               |  |
 |  |  - /campaigns, /templates, /automations: send, schedule, and funnels    |  |
 |  |  - /contacts, /forms, /media, /calendar                             |  |
 |  |  - /t/* and /webhooks/email: Opens, clicks, unsubscribe, bounces        |  |
@@ -52,8 +52,8 @@ ZozoMarket is an enterprise-grade marketing SaaS application focused on automate
 |  +-------------------------------------------------------------------------+  |
 |  |                           Service Layer                                 |  |
 |  |  - campaign, template, automation, contact, form, media, workspace      |  |
-|  |  - email_service.py: console, smtp, resend, mailtrap                    |  |
-|  |  - analytics_service.py and mailtrap_stats.py: local and Mailtrap totals|  |
+|  |  - email_service.py and ses_email.py: console, ses, resend            |  |
+|  |  - analytics_service.py and ses_stats.py: SES CloudWatch mail totals   |  |
 |  +-------------------------------------------------------------------------+  |
 |                                     |                                         |
 |  +-------------------------------------------------------------------------+  |

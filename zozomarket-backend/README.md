@@ -97,7 +97,7 @@ The backend includes a comprehensive async test suite with 50 tests covering eve
 - **Lifecycle**: `Draft` ⇄ `Scheduled` → `Sending` → `Sent` or `Failed`.
 - **Concurrency Protection**: Transitioning into `Sending` executes an atomic conditional SQL `UPDATE ... WHERE status IN (...)`. Only one worker can claim and send a campaign.
 - **Idempotent Delivery**: One `email_messages` row is created per (campaign, contact) with a unique DB constraint. If a dispatch crashes or is retried, delivered contacts are never emailed twice, and transient failures resume automatically.
-- **Delivery Engine**: `EMAIL_PROVIDER=console` logs mail locally. `mailtrap` sends the rendered HTML through the Mailtrap Email API (`MAILTRAP_API_TOKEN`). Dashboard delivery, open, and click figures are read back from that account's sending stats for `MAILTRAP_CATEGORY`. The demo sender is `hello@demomailtrap.co` until a domain is verified. Delivery logs are at https://mailtrap.io/sending/email_logs. `smtp` and `resend` are other relays.
+- **Delivery Engine**: `EMAIL_PROVIDER=console` logs mail locally. `ses` sends the rendered HTML through the Amazon SES v2 API. The From address is `SES_FROM_EMAIL`, and `SES_CONFIGURATION_SET` is attached when it is set. Dashboard delivery, open, and click figures come from that configuration set's CloudWatch metrics. `resend` is another relay.
 
 ### C. Open & Click Tracking Engine
 - Emails generated with HTML include an invisible open pixel (`/api/v1/t/o/{token}.gif`) and wrapped click links (`/api/v1/t/c/{token}`).

@@ -51,19 +51,26 @@ def outbox() -> ConsoleSender:
     return sender
 
 
+def account_body(**overrides: object) -> dict:
+    """Signup body with the workspace details a campaign needs."""
+    body = {
+        "name": "Test User",
+        "email": "test@example.com",
+        "password": "password123",
+        "workspaceName": "Test Workspace",
+        "mailingAddress": "1 Market Street",
+        "fromName": "Test Workspace",
+        "fromEmail": "hello@example.com",
+    }
+    body.update(overrides)
+    return body
+
+
 @pytest.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
-        created = await c.post(
-            "/api/v1/auth/signup",
-            json={
-                "name": "Test User",
-                "email": "test@example.com",
-                "password": "password123",
-                "workspaceName": "Test Workspace",
-            },
-        )
+        created = await c.post("/api/v1/auth/signup", json=account_body())
         assert created.status_code == 201, created.text
         c.headers["Authorization"] = f"Bearer {created.json()['data']['accessToken']}"
         yield c

@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, Mail, LayoutTemplate, Workflow,
-  Users, FileInput, FolderOpen,
+  Users, FileInput, FolderOpen, UserRound,
   PieChart, Settings, type LucideIcon,
 } from 'lucide-react'
 
@@ -43,6 +43,9 @@ export const navGroups: NavGroup[] = [
 export function findNav(pathname: string) {
   if (pathname.startsWith('/email/builder')) {
     return { group: 'Email Marketing', item: { label: 'Email Builder', href: '/email/builder', icon: Mail } }
+  }
+  if (pathname.startsWith('/profile')) {
+    return { group: 'Reports & Settings', item: { label: 'Profile', href: '/profile', icon: UserRound } }
   }
   for (const g of navGroups) {
     const item = g.items.find((i) => pathname.startsWith(i.href))

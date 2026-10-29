@@ -37,7 +37,7 @@ export function Panel({ title, description, actions, children, className, bodyCl
   )
 }
 
-export function KpiCard({ label, value, trend, icon: Icon }: { label: string; value: string; trend?: number; icon?: LucideIcon }) {
+export function KpiCard({ label, value, detail, trend, icon: Icon }: { label: string; value: string; detail?: string | null; trend?: number; icon?: LucideIcon }) {
   const up = (trend ?? 0) >= 0
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
@@ -46,6 +46,7 @@ export function KpiCard({ label, value, trend, icon: Icon }: { label: string; va
         {Icon && <Icon className="size-4 text-muted-foreground" aria-hidden />}
       </div>
       <span className="text-2xl font-semibold tracking-tight">{value}</span>
+      {detail ? <span className="-mt-2 text-sm text-muted-foreground">{detail}</span> : null}
       {trend !== undefined && (
         <span className={cn('flex items-center gap-1 text-xs font-medium', up ? 'text-success' : 'text-destructive')}>
           {up ? <TrendingUp className="size-3.5" aria-hidden /> : <TrendingDown className="size-3.5" aria-hidden />}

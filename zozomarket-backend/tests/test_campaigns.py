@@ -210,3 +210,15 @@ async def test_saved_html_is_kept_when_design_is_empty(client):
     assert "Custom code" in body["html"]
     again = (await client.get(f"{BASE}/{campaign['id']}")).json()["data"]
     assert again["design"] == [] and "Custom code" in again["html"]
+    renamed = await client.patch(f"{BASE}/{campaign['id']}", json={"name": "Renamed"})
+    assert renamed.status_code == 200
+    assert "Custom code" in renamed.json()["data"]["html"]
+    blocked = await client.patch(
+        f"{BASE}/{campaign['id']}",
+        json={"design": [{"type": "heading", "text": "From blocks"}]},
+    )
+    assert blocked.status_code == 200
+    replaced = blocked.json()["data"]
+    assert replaced["design"][0]["text"] == "From blocks"
+    assert "From blocks" in replaced["html"]
+    assert "Custom code" not in replaced["html"]

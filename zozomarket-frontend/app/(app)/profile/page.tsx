@@ -1,21 +1,28 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageHeader, Panel } from '@/components/app/shared'
 import { api } from '@/lib/api'
-import { loadUser, saveSession, type SessionUser } from '@/lib/session'
+import { clearSession, loadUser, saveSession, type SessionUser } from '@/lib/session'
 
 export default function ProfilePage() {
+  const router = useRouter()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [name, setName] = useState('')
   const [workspaceName, setWorkspaceName] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [pending, setPending] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const cached = loadUser()
@@ -92,6 +99,75 @@ export default function ProfilePage() {
           <Button type="submit" disabled={pending} className="self-start">{pending ? 'Saving…' : 'Save profile'}</Button>
         </form>
       </Panel>
+
+      <Panel title="Delete account" description="This removes your sign-in, this workspace, and the campaigns, contacts, templates, automations, forms, and media in it. That cannot be undone.">
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={() => {
+            setDeletePassword('')
+            setDeleteError('')
+            setDeleteOpen(true)
+          }}
+        >
+          Delete account
+        </Button>
+      </Panel>
+
+      <Dialog open={deleteOpen} onOpenChange={(open) => { if (!deleting) { setDeleteOpen(open); if (!open) setDeleteError('') } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete your account?</DialogTitle>
+            <DialogDescription>
+              {user?.email ? `“${user.email}” and the ${user.workspaceName} workspace will be removed.` : 'Your account and workspace will be removed.'} Enter your password to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={async (event) => {
+              event.preventDefault()
+              if (!deletePassword) {
+                setDeleteError('Enter your password.')
+                return
+              }
+              setDeleting(true)
+              setDeleteError('')
+              try {
+                await api.auth.deleteAccount(deletePassword)
+                clearSession()
+                toast.success('Account deleted')
+                router.replace('/login')
+              } catch (err) {
+                setDeleteError(err instanceof Error ? err.message : 'Could not delete the account')
+              } finally {
+                setDeleting(false)
+              }
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="delete-password">Password</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                autoComplete="current-password"
+                autoFocus
+                value={deletePassword}
+                aria-invalid={!!deleteError || undefined}
+                aria-describedby={deleteError ? 'delete-password-error' : undefined}
+                onChange={(event) => {
+                  setDeletePassword(event.target.value)
+                  if (deleteError) setDeleteError('')
+                }}
+              />
+              {deleteError ? <p id="delete-password-error" className="text-xs text-destructive">{deleteError}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={deleting} onClick={() => setDeleteOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={deleting}>{deleting ? 'Deleting…' : 'Delete account'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

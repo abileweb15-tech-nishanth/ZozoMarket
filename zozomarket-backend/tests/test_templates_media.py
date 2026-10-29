@@ -71,6 +71,43 @@ async def test_html_template_stays_html_on_a_new_campaign(client):
     assert "Code template" in body["html"]
 
 
+async def test_updated_html_is_what_the_preview_shows(client):
+    created = await client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Studio note",
+            "design": [{"type": "heading", "text": "Original heading"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    tpl = created.json()["data"]
+    assert "Original heading" in tpl["html"]
+
+    edited = "<html><body><h1>Edited heading</h1></body></html>"
+    patched = await client.patch(
+        f"/api/v1/templates/{tpl['id']}",
+        json={"html": edited, "design": []},
+    )
+    assert patched.status_code == 200, patched.text
+    saved = patched.json()["data"]
+    assert saved["design"] == []
+    assert "Edited heading" in saved["html"]
+    assert "Original heading" not in saved["html"]
+
+    raw = await client.get(f"/api/v1/templates/{tpl['id']}/preview.html")
+    assert raw.status_code == 200
+    assert "Edited heading" in raw.text
+    assert "Original heading" not in raw.text
+
+    renamed = await client.patch(f"/api/v1/templates/{tpl['id']}", json={"name": "Studio note revised"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["data"]["name"] == "Studio note revised"
+    assert "Edited heading" in renamed.json()["data"]["html"]
+    again = await client.get(f"/api/v1/templates/{tpl['id']}/preview.html")
+    assert "Edited heading" in again.text
+    assert "Original heading" not in again.text
+
+
 async def test_render_endpoint_validates_blocks(client):
     bad = await client.post("/api/v1/templates/render", json={"design": [{"type": "iframe"}]})
     assert bad.status_code == 422

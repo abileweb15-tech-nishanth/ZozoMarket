@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
 from app.schemas.auth import (
+    AccountDelete,
     AuthSession,
     LoginRequest,
     ProfileUpdate,
@@ -9,7 +10,7 @@ from app.schemas.auth import (
     SignupRequest,
     UserRead,
 )
-from app.schemas.common import ApiResponse
+from app.schemas.common import ApiResponse, SuccessResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -39,3 +40,9 @@ async def me(user: CurrentUser):
 async def update_me(db: DbSession, user: CurrentUser, body: ProfileUpdate):
     updated = await auth_service.update_profile(db, user, body)
     return ApiResponse(data=UserRead.from_user(updated))
+
+
+@router.delete("/me", response_model=SuccessResponse)
+async def delete_me(db: DbSession, user: CurrentUser, body: AccountDelete):
+    await auth_service.delete_account(db, user, body.password)
+    return SuccessResponse()

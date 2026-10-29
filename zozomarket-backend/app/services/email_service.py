@@ -1,25 +1,20 @@
 """Outbound email: provider abstraction, personalisation and tracking injection."""
 
-import asyncio
 import logging
 import re
-import smtplib
-import ssl
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from email.message import EmailMessage as MimeMessage
-from email.utils import formataddr, make_msgid
+from email.utils import formataddr
 from functools import lru_cache
 from typing import Protocol
 from urllib.parse import quote
 
 import httpx
-import mailtrap as mt
 
 from app.core.config import settings
-from app.core.exceptions import ExternalServiceError
 from app.core.security import sign_token
+from app.services import ses_email
 from app.services.template_service import contact_variables, html_to_text, render_merge_tags
 
 logger = logging.getLogger(__name__)
@@ -68,117 +63,24 @@ class ConsoleSender:
         return SendResult(provider_message_id=f"console-{uuid.uuid4()}")
 
 
-@dataclass(slots=True)
-class SmtpSettings:
-    host: str
-    port: int
-    username: str | None
-    password: str | None
-    use_tls: bool
+class SesSender:
+    """Sends through Amazon SES v2. The From address is the verified SES identity."""
 
-
-class SMTPSender:
-    """Works with any SMTP relay, including Mailtrap's sandbox and Amazon SES."""
-
-    def __init__(
-        self, smtp: SmtpSettings, *, name: str = "smtp", require_login: bool = False
-    ) -> None:
-        if require_login and not (smtp.username and smtp.password):
-            raise ExternalServiceError("SMTP username and password are required")
-        self.name = name
-        self._smtp = smtp
-
-    def _build(self, email: OutboundEmail) -> MimeMessage:
-        msg = MimeMessage()
-        msg["Subject"] = email.subject
-        msg["From"] = formataddr((email.from_name or "", email.from_email))
-        msg["To"] = email.to
-        msg["Message-ID"] = make_msgid(domain=email.from_email.rpartition("@")[2] or None)
-        if email.reply_to:
-            msg["Reply-To"] = email.reply_to
-        for key, value in email.headers.items():
-            msg[key] = value
-        msg.set_content(email.text or html_to_text(email.html))
-        msg.add_alternative(email.html, subtype="html")
-        return msg
-
-    def _connect(self) -> smtplib.SMTP:
-        if self._smtp.port == 465:
-            return smtplib.SMTP_SSL(
-                self._smtp.host,
-                self._smtp.port,
-                timeout=30,
-                context=ssl.create_default_context(),
-            )
-        client = smtplib.SMTP(self._smtp.host, self._smtp.port, timeout=30)
-        if self._smtp.use_tls:
-            client.starttls(context=ssl.create_default_context())
-        return client
-
-    def _send_sync(self, msg: MimeMessage) -> None:
-        with self._connect() as smtp:
-            if self._smtp.username and self._smtp.password:
-                smtp.login(self._smtp.username, self._smtp.password)
-            smtp.send_message(msg)
+    name = "ses"
 
     async def send(self, email: OutboundEmail) -> SendResult:
-        msg = self._build(email)
-        try:
-            await asyncio.to_thread(self._send_sync, msg)
-        except smtplib.SMTPRecipientsRefused as exc:
-            raise EmailDeliveryError(
-                f"Recipient refused: {exc.recipients}", permanent=True
-            ) from exc
-        except smtplib.SMTPResponseException as exc:
-            raise EmailDeliveryError(
-                f"SMTP {exc.smtp_code}: {exc.smtp_error!r}", permanent=500 <= exc.smtp_code < 600
-            ) from exc
-        except (OSError, smtplib.SMTPException) as exc:
-            raise EmailDeliveryError(f"SMTP error: {exc}") from exc
-        return SendResult(provider_message_id=str(msg["Message-ID"]).strip("<>"))
-
-
-class MailtrapSender:
-    """Sends through the Mailtrap Email API. The saved HTML is the message body."""
-
-    name = "mailtrap"
-
-    def __init__(self) -> None:
-        token = _secret(settings.MAILTRAP_API_TOKEN)
-        if not token:
-            raise ExternalServiceError(
-                "MAILTRAP_API_TOKEN is required for EMAIL_PROVIDER=mailtrap"
-            )
-        self._client = mt.MailtrapClient(token=token)
-
-    def _send_sync(self, email: OutboundEmail) -> str:
-        sender_email = email.from_email or ""
-        if not sender_email or sender_email.endswith(".local"):
-            sender_email = settings.MAILTRAP_SENDER_EMAIL
-        mail = mt.Mail(
-            sender=mt.Address(
-                email=sender_email,
-                name=email.from_name or settings.MAILTRAP_SENDER_NAME,
-            ),
-            to=[mt.Address(email=email.to)],
-            subject=email.subject,
-            text=email.text or html_to_text(email.html),
-            html=email.html,
-            category=settings.MAILTRAP_CATEGORY,
-            reply_to=mt.Address(email=email.reply_to) if email.reply_to else None,
+        result = await ses_email.send_email(
+            email.to,
+            email.subject,
+            email.html,
+            email.text or html_to_text(email.html),
+            from_name=email.from_name,
+            reply_to=email.reply_to,
+            headers=email.headers,
         )
-        response = self._client.send(mail)
-        message_ids = response.get("message_ids") or []
-        return str(message_ids[0]) if message_ids else ""
-
-    async def send(self, email: OutboundEmail) -> SendResult:
-        try:
-            message_id = await asyncio.to_thread(self._send_sync, email)
-        except mt.MailtrapError as exc:
-            raise EmailDeliveryError(f"Mailtrap error: {exc}", permanent=True) from exc
-        except OSError as exc:
-            raise EmailDeliveryError(f"Mailtrap transport error: {exc}") from exc
-        return SendResult(provider_message_id=message_id)
+        if not result.ok:
+            raise EmailDeliveryError(result.error, permanent=result.permanent)
+        return SendResult(provider_message_id=result.message_id)
 
 
 class ResendSender:
@@ -187,7 +89,7 @@ class ResendSender:
 
     def __init__(self) -> None:
         if not settings.RESEND_API_KEY:
-            raise RuntimeError("RESEND_API_KEY is required for EMAIL_PROVIDER=resend")
+            raise EmailDeliveryError("RESEND_API_KEY is required for EMAIL_PROVIDER=resend")
         self._client = httpx.AsyncClient(
             timeout=30,
             headers={"Authorization": f"Bearer {settings.RESEND_API_KEY.get_secret_value()}"},
@@ -216,28 +118,11 @@ class ResendSender:
         return SendResult(provider_message_id=resp.json().get("id", ""))
 
 
-def _secret(value: object) -> str | None:
-    if value is None:
-        return None
-    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
-    return revealed or None
-
-
 @lru_cache
 def get_sender() -> EmailSender:
     match settings.EMAIL_PROVIDER:
-        case "smtp":
-            return SMTPSender(
-                SmtpSettings(
-                    settings.SMTP_HOST,
-                    settings.SMTP_PORT,
-                    settings.SMTP_USERNAME,
-                    _secret(settings.SMTP_PASSWORD),
-                    settings.SMTP_USE_TLS,
-                )
-            )
-        case "mailtrap":
-            return MailtrapSender()
+        case "ses":
+            return SesSender()
         case "resend":
             return ResendSender()
         case _:

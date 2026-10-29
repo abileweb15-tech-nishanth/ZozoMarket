@@ -11,15 +11,12 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.base import utcnow
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.contact import Contact, SubscriptionStatus
 from app.models.message import EmailMessage, EmailStatDaily, MessageStatus
-from app.services import mailtrap_stats
-
-# Mailtrap's sending log is one shared mailbox. Only this account's workspace may see it.
-# Every other workspace uses the messages it sent itself.
-_MAIL_STATS_EMAIL = "mnishanthkumar2@gmail.com"
+from app.services import ses_stats
 
 _STAT_COLUMNS = ("sent", "delivered", "opens", "clicks", "bounces", "unsubscribes")
 _CAMPAIGN_COUNTER = {
@@ -238,25 +235,20 @@ async def record_unsubscribe(
 # --- Queries ----------------------------------------------------------------------------
 
 
-async def _owns_shared_mailbox(session: AsyncSession) -> bool:
-    from app.core.tenancy import current_workspace_id
-    from app.models.account import User
-
-    workspace_id = current_workspace_id.get()
-    if workspace_id is None:
-        return False
-    owner_workspace = await session.scalar(
-        select(User.workspace_id).where(func.lower(User.email) == _MAIL_STATS_EMAIL)
-    )
-    return owner_workspace == workspace_id
-
-
 async def _daily_totals(
     session: AsyncSession, start: dt.date, end: dt.date, campaign_id: str | None = None
 ) -> dict[dt.date, dict[str, int]]:
-    if campaign_id is None and await _owns_shared_mailbox(session):
-        remote = await mailtrap_stats.daily_counts(start, end)
+    # One SES account covers every workspace. A single campaign still uses its own rows,
+    # because CloudWatch only has the shared campaign dimension.
+    if campaign_id is None and settings.EMAIL_PROVIDER == "ses":
+        remote = await ses_stats.daily_counts(start, end)
         if remote is not None:
+            # CloudWatch counts every open and click, including a second view of the same
+            # message. A rate uses each delivery at most once.
+            for counters in remote.values():
+                delivered = counters.get("delivered", 0)
+                counters["opens"] = min(counters.get("opens", 0), delivered)
+                counters["clicks"] = min(counters.get("clicks", 0), delivered)
             return remote
     stmt = (
         select(EmailStatDaily.day, *[func.sum(getattr(EmailStatDaily, c)) for c in _STAT_COLUMNS])
@@ -387,8 +379,11 @@ def _trend(current: float, previous: float) -> float:
     return round((current - previous) * 100 / previous, 1)
 
 
-def _kpi(raw: float, display: str, trend: float) -> dict:
-    return {"value": display, "raw": raw, "trend": trend}
+def _kpi(raw: float, display: str, trend: float, detail: str | None = None) -> dict:
+    row = {"value": display, "raw": raw, "trend": trend}
+    if detail is not None:
+        row["detail"] = detail
+    return row
 
 
 async def dashboard_kpis(session: AsyncSession, window_days: int = 30) -> dict:
@@ -432,9 +427,9 @@ async def dashboard_kpis(session: AsyncSession, window_days: int = 30) -> dict:
         or 0
     )
     rates = {
-        "delivery_rate": ("delivered", "sent"),
-        "email_open_rate": ("opens", "delivered"),
-        "avg_click_rate": ("clicks", "delivered"),
+        "delivery_rate": ("delivered", "sent", f"{cur['delivered']:,} of {cur['sent']:,} sent"),
+        "email_open_rate": ("opens", "delivered", f"{cur['opens']:,} opened"),
+        "avg_click_rate": ("clicks", "delivered", f"{cur['clicks']:,} clicked"),
     }
     kpis = {
         "emails_delivered": _kpi(
@@ -445,7 +440,7 @@ async def dashboard_kpis(session: AsyncSession, window_days: int = 30) -> dict:
         ),
         "scheduled_campaigns": _kpi(scheduled, str(scheduled), float(scheduled_new)),
     }
-    for key, (num, den) in rates.items():
+    for key, (num, den, detail) in rates.items():
         value = rate(cur, num, den)
-        kpis[key] = _kpi(value, f"{value:.1f}%", round(value - rate(prev, num, den), 1))
+        kpis[key] = _kpi(value, f"{value:.1f}%", round(value - rate(prev, num, den), 1), detail)
     return kpis

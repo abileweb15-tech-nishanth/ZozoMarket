@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from sqlalchemy import select
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUser, DbSession
 from app.api.v1.endpoints.calendar import to_event
 from app.models.campaign import Campaign
 from app.schemas.campaign import CampaignRead
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("", response_model=ApiResponse[DashboardData])
-async def dashboard(db: DbSession):
+async def dashboard(db: DbSession, _user: CurrentUser):
     """KPIs (30-day window vs the previous 30 days), recent campaigns and upcoming sends."""
     kpis = await analytics_service.dashboard_kpis(db)
     recent = await db.scalars(select(Campaign).order_by(Campaign.updated_at.desc()).limit(5))
@@ -28,5 +28,5 @@ async def dashboard(db: DbSession):
 
 
 @router.get("/kpis", response_model=ApiResponse[DashboardKPIs])
-async def kpis(db: DbSession):
+async def kpis(db: DbSession, _user: CurrentUser):
     return ApiResponse(data=DashboardKPIs(**await analytics_service.dashboard_kpis(db)))

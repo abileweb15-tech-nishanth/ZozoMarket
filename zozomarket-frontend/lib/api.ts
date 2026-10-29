@@ -1,6 +1,7 @@
 /**
  * REST client for the ZozoMarket FastAPI backend.
  * JSON is camelCase and wrapped as `{ success, data }`.
+ * List endpoints return `{ success, data: [...], total, page, pageSize, pages }`.
  */
 
 import { clearSession, getAccessToken, getRefreshToken, saveSession, type AuthSession, type SessionUser } from '@/lib/session'
@@ -32,6 +33,19 @@ export type Contact = {
   status: 'Subscribed' | 'Unsubscribed' | 'Pending'
   added: string
   attributes: Record<string, string>
+}
+
+export type Segment = {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  matchType: 'any' | 'all'
+  status: 'Subscribed' | 'Unsubscribed' | 'Pending' | null
+  source: string | null
+  contactCount: number
+  createdAt: string
+  updatedAt: string
 }
 
 export type CalendarEvent = {
@@ -101,7 +115,7 @@ export type EmailPerformancePoint = {
   clicks: number
 }
 
-export type Kpi = { value: string; trend: number; raw?: number }
+export type Kpi = { value: string; trend: number; raw?: number; detail?: string | null }
 
 export type DashboardKPIs = {
   emailsDelivered: Kpi
@@ -222,7 +236,11 @@ export type WorkspaceSettings = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
 
+/** Single-object response envelope: { success, data: T } */
 type Envelope<T> = { success: boolean; data?: T; error?: string }
+
+/** List response envelope: { success, data: T[], total, page, pageSize, pages } */
+type ListEnvelope<T> = { success: boolean; data: T[]; total: number; page: number; pageSize: number; pages: number; error?: string }
 
 async function refreshAccessToken() {
   const refreshToken = getRefreshToken()
@@ -267,6 +285,39 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
   return body.data as T
 }
 
+/**
+ * For list endpoints that return { success, data: T[], total, page, ... }.
+ * Correctly extracts the inner `data` array from the ListResponse envelope.
+ */
+async function listRequest<T>(path: string, init?: RequestInit, retry = true): Promise<T[]> {
+  const token = getAccessToken()
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    })
+  } catch {
+    throw new Error('Cannot reach the ZozoMarket API. Start it with: uvicorn app.main:app --port 8000')
+  }
+  if (response.status === 401 && retry && !path.startsWith('/auth/')) {
+    if (await refreshAccessToken()) return listRequest(path, init, false)
+    clearSession()
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.assign('/login')
+    }
+  }
+  const body = (await response.json().catch(() => null)) as ListEnvelope<T> | null
+  if (!response.ok || !body?.success) {
+    throw new Error(body?.error || `Request failed (${response.status})`)
+  }
+  return body.data ?? []
+}
+
 async function publicRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -300,15 +351,34 @@ function asForm(row: LeadForm): LeadForm {
   }
 }
 
+/** Dynamic current-year calendar range so the dashboard always shows current data. */
+function calendarYearRange() {
+  const year = new Date().getFullYear()
+  return `start=${year}-01-01&end=${year}-12-31`
+}
+
 export const api = {
   auth: {
-    signup: (data: { name: string; email: string; password: string; workspaceName?: string }) =>
+    signup: (data: {
+      name: string
+      email: string
+      password: string
+      workspaceName: string
+      website?: string
+      timezone: string
+      mailingAddress: string
+      fromName: string
+      fromEmail: string
+      replyTo?: string
+    }) =>
       request<AuthSession>('/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
     login: (data: { email: string; password: string }) =>
       request<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
     me: () => request<SessionUser>('/auth/me'),
     updateProfile: (data: { name?: string; workspaceName?: string; currentPassword?: string; newPassword?: string }) =>
       request<SessionUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
+    deleteAccount: (password: string) =>
+      request<unknown>('/auth/me', { method: 'DELETE', body: JSON.stringify({ password }) }).then(() => ({ success: true })),
   },
 
   workspace: {
@@ -327,7 +397,8 @@ export const api = {
   },
 
   campaigns: {
-    list: () => request<EmailCampaign[]>(`/campaigns?${page}`).then((rows) => rows ?? []),
+    /** Returns all campaigns (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
+    list: () => listRequest<EmailCampaign>(`/campaigns?${page}`),
     get: (id: string) => request<CampaignDraft>(`/campaigns/${id}`),
     create: (data: {
       name: string
@@ -371,8 +442,10 @@ export const api = {
   },
 
   contacts: {
-    list: () => request<Contact[]>(`/contacts?${page}`).then((rows) => (rows ?? []).map((row) => ({ ...row, tags: row.tags ?? [], attributes: row.attributes ?? {} }))),
+    /** Returns all contacts (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
+    list: () => listRequest<Contact>(`/contacts?${page}`).then((rows) => rows.map((row) => ({ ...row, tags: row.tags ?? [], attributes: row.attributes ?? {} }))),
     tags: () => request<{ name: string; count: number }[]>('/contacts/tags').then((rows) => rows ?? []),
+    stats: () => request<{ total: number; subscribed: number; unsubscribed: number; pending: number }>('/contacts/stats'),
     get: (id: string) => request<Contact>(`/contacts/${id}`),
     create: (data: Pick<Contact, 'name' | 'email' | 'tags' | 'source' | 'status'>) =>
       request<Contact>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
@@ -390,28 +463,105 @@ export const api = {
     },
   },
 
+  segments: {
+    list: () =>
+      request<Array<Record<string, unknown>>>('/segments').then((rows) =>
+        (rows ?? []).map((r) => ({
+          id: String(r.id),
+          name: String(r.name),
+          description: String(r.description || ''),
+          tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
+          matchType: (r.match_type || r.matchType || 'any') as 'any' | 'all',
+          status: (r.status as 'Subscribed' | 'Unsubscribed' | 'Pending' | null) ?? null,
+          source: (r.source as string | null) ?? null,
+          contactCount: Number(r.contact_count ?? r.contactCount ?? 0),
+          createdAt: String(r.created_at ?? r.createdAt ?? ''),
+          updatedAt: String(r.updated_at ?? r.updatedAt ?? ''),
+        }))
+      ),
+    get: (id: string) => request<Segment>(`/segments/${id}`),
+    create: (data: {
+      name: string
+      description?: string
+      tags?: string[]
+      matchType?: 'any' | 'all'
+      status?: string | null
+      source?: string | null
+    }) =>
+      request<Segment>('/segments', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description ?? '',
+          tags: data.tags ?? [],
+          match_type: data.matchType ?? 'any',
+          status: data.status || null,
+          source: data.source || null,
+        }),
+      }),
+    update: (
+      id: string,
+      updates: {
+        name?: string
+        description?: string
+        tags?: string[]
+        matchType?: 'any' | 'all'
+        status?: string | null
+        source?: string | null
+      }
+    ) =>
+      request<Segment>(`/segments/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...(updates.name !== undefined ? { name: updates.name } : {}),
+          ...(updates.description !== undefined ? { description: updates.description } : {}),
+          ...(updates.tags !== undefined ? { tags: updates.tags } : {}),
+          ...(updates.matchType !== undefined ? { match_type: updates.matchType } : {}),
+          ...(updates.status !== undefined ? { status: updates.status || null } : {}),
+          ...(updates.source !== undefined ? { source: updates.source || null } : {}),
+        }),
+      }),
+    delete: (id: string) => request<unknown>(`/segments/${id}`, { method: 'DELETE' }).then(() => ({ success: true })),
+    preview: (data: { tags?: string[]; matchType?: 'any' | 'all'; status?: string | null; source?: string | null }) =>
+      request<{ count: number }>('/segments/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          tags: data.tags ?? [],
+          match_type: data.matchType ?? 'any',
+          status: data.status || null,
+          source: data.source || null,
+        }),
+      }),
+    contacts: (id: string) => listRequest<Contact>(`/segments/${id}/contacts?${page}`),
+  },
+
   calendar: {
-    /** Demo records live in 2026; a full-year window keeps month navigation working. */
-    list: () => request<CalendarEvent[]>('/calendar?start=2026-01-01&end=2026-12-31'),
+    /** Uses dynamic current year so the dashboard always shows the right data. */
+    list: () => listRequest<CalendarEvent>(`/calendar?${calendarYearRange()}`),
   },
 
   analytics: {
-    getEmailPerformance: () => request<EmailPerformancePoint[]>('/analytics/performance?interval=week'),
+    getEmailPerformance: (interval: 'day' | 'week' | 'month' = 'week') =>
+      request<EmailPerformancePoint[]>(`/analytics/performance?interval=${interval}`),
   },
 
   templates: {
+    /** Returns all templates (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
     list: () =>
-      request<Template[]>(`/templates?${page}`).then((rows) =>
+      listRequest<Template>(`/templates?${page}`).then((rows) =>
         rows.map((t) => ({ ...t, image: t.image ?? '' })),
       ),
     get: (id: string) => request<TemplateDetail>(`/templates/${id}`),
     create: (data: { name: string; category?: string; subject?: string; preheader?: string; design?: EmailBlock[]; html?: string }) =>
       request<TemplateDetail>('/templates', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: { name?: string; category?: string; subject?: string; preheader?: string; design?: EmailBlock[]; html?: string }) =>
+      request<TemplateDetail>(`/templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     render: (data: { design: EmailBlock[]; preheader?: string; variables?: Record<string, string> }) =>
       request<{ html: string; text: string }>('/templates/render', { method: 'POST', body: JSON.stringify(data) }),
     previewHtml: async (id: string) => {
       const token = getAccessToken()
       const response = await fetch(`${API_BASE}/templates/${id}/preview.html`, {
+        cache: 'no-store',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (!response.ok) throw new Error('Could not preview this template')
@@ -421,7 +571,8 @@ export const api = {
   },
 
   media: {
-    list: () => request<MediaAsset[]>(`/media?${page}`),
+    /** Returns all media assets (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
+    list: () => listRequest<MediaAsset>(`/media?${page}`),
     upload: async (file: File) => {
       const body = new FormData()
       body.append('files', file)
@@ -434,7 +585,8 @@ export const api = {
   },
 
   forms: {
-    list: () => request<LeadForm[]>(`/forms?${page}`).then((rows) => (rows ?? []).map(asForm)),
+    /** Returns all forms (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
+    list: () => listRequest<LeadForm>(`/forms?${page}`).then((rows) => (rows ?? []).map(asForm)),
     create: (data: { name: string; kind: LeadForm['kind']; tags?: string[]; title?: string; successMessage?: string }) =>
       request<LeadForm>('/forms', { method: 'POST', body: JSON.stringify(data) }).then(asForm),
     update: (id: string, data: Partial<Pick<LeadForm, 'name' | 'kind' | 'title' | 'description' | 'successMessage' | 'tags' | 'fields' | 'status' | 'doubleOptIn'>>) =>
@@ -447,7 +599,8 @@ export const api = {
   },
 
   automations: {
-    list: () => request<Automation[]>(`/automations?${page}`),
+    /** Returns all automations (up to 200). Uses listRequest to unwrap the ListResponse envelope. */
+    list: () => listRequest<Automation>(`/automations?${page}`),
     get: (id: string) => request<Automation>(`/automations/${id}`),
     create: (data: { name: string; description?: string; trigger?: string; triggerType?: string; triggerConfig?: Record<string, unknown>; nodes?: Omit<FlowNode, 'id'>[]; edges?: Omit<FlowEdge, 'id'>[] }) =>
       request<Automation>('/automations', { method: 'POST', body: JSON.stringify(data) }),
@@ -462,7 +615,7 @@ export const api = {
     test: (id: string, email: string, nodeId?: string) =>
       request<{ enrolled: number }>(`/automations/${id}/test`, { method: 'POST', body: JSON.stringify({ email, ...(nodeId ? { nodeId } : {}) }) }),
     stats: (id: string) => request<Record<string, number>>(`/automations/${id}/stats`),
-    enrollments: (id: string) => request<AutomationEnrollment[]>(`/automations/${id}/enrollments?${page}`),
-    steps: (id: string) => request<AutomationStep[]>(`/automations/${id}/steps?${page}`),
+    enrollments: (id: string) => listRequest<AutomationEnrollment>(`/automations/${id}/enrollments?${page}`),
+    steps: (id: string) => listRequest<AutomationStep>(`/automations/${id}/steps?${page}`),
   },
 }

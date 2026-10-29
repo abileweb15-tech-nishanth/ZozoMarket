@@ -2,6 +2,7 @@
 
 import datetime as dt
 
+from app.core.config import settings
 from app.services.seed import seed_demo_data
 
 
@@ -10,54 +11,72 @@ async def test_seed_is_disabled(session):
     assert await seed_demo_data(session) is False
 
 
-async def test_dashboard_uses_mailtrap_delivery_counts(client, monkeypatch):
+async def test_dashboard_uses_local_delivery_counts(client):
+    data = (await client.get("/api/v1/dashboard/kpis")).json()["data"]
+    assert data["emailsDelivered"]["raw"] == 0
+    assert data["emailOpenRate"]["value"] == "0.0%"
+    assert data["avgClickRate"]["value"] == "0.0%"
+
+
+async def test_dashboard_uses_ses_delivery_counts(client, monkeypatch):
     day = dt.date.today()
 
     async def fake_daily(start, end):
         if start <= day <= end:
             return {
                 day: {
-                    "sent": 2,
-                    "delivered": 2,
-                    "opens": 1,
+                    "sent": 4,
+                    "delivered": 3,
+                    "opens": 2,
                     "clicks": 1,
+                    "bounces": 1,
+                    "unsubscribes": 0,
+                }
+            }
+        return {}
+
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "ses")
+    monkeypatch.setattr("app.services.ses_stats.daily_counts", fake_daily)
+    data = (await client.get("/api/v1/dashboard/kpis")).json()["data"]
+    assert data["emailsDelivered"]["raw"] == 3
+    assert data["deliveryRate"]["value"] == "75.0%"
+    assert data["deliveryRate"]["detail"] == "3 of 4 sent"
+    assert data["emailOpenRate"]["value"] == "66.7%"
+    assert data["emailOpenRate"]["detail"] == "2 opened"
+    assert data["avgClickRate"]["value"] == "33.3%"
+    assert data["avgClickRate"]["detail"] == "1 clicked"
+    assert data["totalSubscribers"]["raw"] == 0
+
+    async def repeat_opens(start, end):
+        if start <= day <= end:
+            return {
+                day: {
+                    "sent": 4,
+                    "delivered": 4,
+                    "opens": 7,
+                    "clicks": 6,
                     "bounces": 0,
                     "unsubscribes": 0,
                 }
             }
         return {}
 
-    async def this_account(_session):
-        return True
-
-    monkeypatch.setattr("app.services.mailtrap_stats.daily_counts", fake_daily)
-    monkeypatch.setattr("app.services.analytics_service._owns_shared_mailbox", this_account)
-    data = (await client.get("/api/v1/dashboard/kpis")).json()["data"]
-    assert data["emailsDelivered"]["raw"] == 2
-    assert data["emailOpenRate"]["value"] == "50.0%"
-    assert data["avgClickRate"]["value"] == "50.0%"
-
-    series = (await client.get("/api/v1/analytics/performance?interval=week")).json()["data"]
-    assert sum(point["delivered"] for point in series) == 2
-
-
-async def test_other_accounts_keep_their_own_mail_counts(client, monkeypatch):
-    async def fake_daily(start, end):
-        return {
-            dt.date.today(): {
-                "sent": 9,
-                "delivered": 9,
-                "opens": 8,
-                "clicks": 0,
-                "bounces": 0,
-                "unsubscribes": 0,
-            }
-        }
-
-    monkeypatch.setattr("app.services.mailtrap_stats.daily_counts", fake_daily)
-    data = (await client.get("/api/v1/dashboard/kpis")).json()["data"]
-    assert data["emailsDelivered"]["raw"] == 0
-    assert data["emailOpenRate"]["value"] == "0.0%"
+    monkeypatch.setattr("app.services.ses_stats.daily_counts", repeat_opens)
+    again = (await client.get("/api/v1/dashboard/kpis")).json()["data"]
+    assert again["emailsDelivered"]["raw"] == 4
+    assert again["deliveryRate"]["detail"] == "4 of 4 sent"
+    assert again["emailOpenRate"]["value"] == "100.0%"
+    assert again["emailOpenRate"]["detail"] == "4 opened"
+    assert again["avgClickRate"]["value"] == "100.0%"
+    assert again["avgClickRate"]["detail"] == "4 clicked"
+    series = (
+        await client.get(
+            "/api/v1/analytics/performance",
+            params={"start": day.isoformat(), "end": day.isoformat(), "interval": "day"},
+        )
+    ).json()["data"]
+    assert sum(point["opens"] for point in series) == 4
+    assert sum(point["delivered"] for point in series) == 4
 
 
 async def test_dashboard_shape_matches_frontend(client):

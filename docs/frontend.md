@@ -24,6 +24,7 @@ ZozoMarket is an email marketing SaaS platform, delivering automated drip journe
 zozomarket-frontend/
 ├── app/                        # Next.js App Router root
 │   ├── f/[slug]/               # Public form link. A live signup is stored as a contact.
+│   ├── (auth)/                 # Sign in and account creation. No app sidebar.
 │   ├── (app)/                  # Route group sharing the authenticated dashboard layout
 │   │   ├── layout.tsx          # App shell: Sidebar + Header + Main content area
 │   │   ├── dashboard/          # Email marketing command center & key performance indicators
@@ -31,7 +32,7 @@ zozomarket-frontend/
 │   │   ├── email/              # Email marketing core features
 │   │   │   ├── campaigns/      # Broadcasts list, status tracking, open & click rates
 │   │   │   ├── builder/        # Visual drag-and-drop / block-based email editor
-│   │   │   └── templates/      # Saved layouts that open a draft campaign in the builder
+│   │   │   └── templates/      # Saved layouts. Edit updates the template; Use Template starts a campaign
 │   │   ├── contacts/           # Audience CRM, tags, filters, and subscriber management
 │   │   ├── forms/              # Lead capture forms & landing pages
 │   │   ├── media/              # Media asset library (images, banners, logos for emails)
@@ -95,22 +96,27 @@ Next.js App Router uses folder-based routing where every directory containing a 
 - **`app/globals.css`**:
   - **Why**: Defines all design system color tokens using modern CSS custom properties (supporting light and dark mode) and imports `@import "tailwindcss";` for Tailwind v4.
 
-#### 2. The `(app)` Route Group
+#### 2. Account pages (`app/(auth)/*`)
+- **`login/page.tsx`**: Sign in with the email and password chosen on account creation. The email field is focused first. A missing or invalid email, or a missing password, is shown on the field. A rejected sign-in stays on the form. An existing session opens the dashboard.
+- **`signup/page.tsx`**: Creates the account and the workspace in three steps, using the same fields Workspace Settings needs. **Account**: name, sign-in email, password entered twice (at least 8 characters, with a strength meter). **Workspace**: workspace name, optional website, time zone, and physical mailing address. **Sending**: from name, from email, and optional reply-to. Continue validates the current step only. Back keeps what was typed. Workspace name, from name, and from email fill from the account step when those fields are still empty. Time zone defaults to the browser zone when it is one of UTC, Asia/Kolkata, America/New_York, America/Los_Angeles, or Europe/London, otherwise UTC. An existing session opens the dashboard.
+- **`components/app/auth-screen.tsx`**: Shared layout for both pages. Desktop shows a short product panel beside the form. Signup uses a wider card and a step indicator. Passwords can be shown or hidden.
+
+#### 3. The `(app)` Route Group
 Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not* appear in the browser URL path (e.g., `app/(app)/dashboard` resolves to `/dashboard`, not `/(app)/dashboard`).
 - **`app/(app)/layout.tsx`**:
   - **Why**: Provides a unified shell layout containing `<AppSidebar />` on the left and `<AppHeader />` with `<main>{children}</main>` on the right.
   - **How**: Renders once for all sub-routes. When navigating between `/dashboard`, `/email/campaigns`, and `/analytics`, the sidebar and header remain mounted without re-rendering or losing scroll state.
 
-#### 3. Core Feature Pages (`app/(app)/*`)
+#### 4. Core Feature Pages (`app/(app)/*`)
 - **`dashboard/page.tsx`**: Email marketing command center featuring:
-  - High-level KPIs: emails delivered, delivery rate, open rate, click rate, subscribers, and scheduled campaigns.
+  - High-level KPIs: emails delivered, delivery rate, open rate, click rate, subscribers, and scheduled campaigns. The three rate cards also show the count (`4 of 4 sent`, `4 opened`, `0 clicked`). The Email Analytics page shows the same open and click lines.
   - 6-week Email Performance Trend line chart (Delivered, Opens, Clicks).
   - Campaign open-rate vs click-rate bar comparison.
   - Recent Campaigns and Upcoming Scheduled Email Dispatches tables.
 - **`calendar/page.tsx`**: Campaign Calendar tracking all scheduled email dispatches across dates and times. Filterable by type (*Newsletter*, *Promotional*, *Automated*, *Announcement*) in Month and List views.
 - **`email/campaigns/page.tsx`**: Email broadcast manager. Create Email Campaign opens the email builder. Each saved draft appears here, and its name or Edit opens that campaign in the builder. Draft and Scheduled rows can change status. The builder is not a sidebar item.
-- **`email/builder/page.tsx`**: Visual email editor and an HTML code editor. Pasting HTML in Code makes Visual show that HTML in a wide preview that fills the builder height, and switching back to Code keeps the same HTML. Saving that HTML clears the block design so a test send and a schedule send the HTML. Save as template stores that HTML when Code is the email being edited. **Use the previous blocks** returns to the block canvas, and the next save sends those blocks. Save draft stores the campaign and opens the campaign list. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
-- **`email/templates/page.tsx`**: Gallery of saved and starter layouts. Use Template creates a draft campaign and opens the builder. An HTML template opens in Code with that HTML. Delete removes a saved template. Starter layouts stay.
+- **`email/builder/page.tsx`**: Visual email editor and an HTML code editor. The first edit in Code makes that HTML the email. Visual, Preview, and save all use it, and a slow block render cannot replace it. Switching back to Code keeps the same HTML. Saving clears the block design so a test send and a schedule send the HTML. Save as template stores that HTML. **Use the previous blocks** returns to the block canvas, and the next save sends those blocks. Save draft stores the campaign and opens the campaign list. A campaign created from a template shows **Update template**, which writes the current HTML or blocks back to that template. Opening `/email/builder?template=` edits the saved template itself: autosave and **Save template** call `PATCH /templates/{id}` with the same HTML-source rules, then return to the gallery. Schedule chooses all subscribers, contact tags, or a form's tags, then a date and time.
+- **`email/templates/page.tsx`**: Gallery of saved and starter layouts. **Edit** on a saved template opens the builder for that template and saves HTML back onto it. Use Template still creates a draft campaign and opens the builder. Preview for a saved template fetches `/preview.html` again, so the dialog and the card show the HTML that was just saved. An HTML template opens in Code with that HTML. Delete removes a saved template. Starter layouts stay.
 - **`email/automations/page.tsx`**: Search, status filter, and a table of funnels (name, trigger, status, enrolled, completed, updated). New automation opens the builder. Row actions edit, duplicate, activate, pause, archive, send a test of the first email on the flow, and delete.
 - **`email/automations/[id]/page.tsx`**: Loads `components/automations/builder.tsx`, a vertical flow that starts at the trigger and lays itself out. A + between steps opens a picker grouped as Messages, Timing, Conditions, Contact actions, and Exit. A new step goes between the step above and the step below. A condition splits into Yes and No columns; the steps that were below it continue on Yes, and No gets an End. Deleting a step joins the steps around it. Deleting a condition removes both branches. End can only go at the end of a path. Steps the trigger cannot reach (from older drafts) are listed as Unconnected steps with Move onto the flow and Delete. Clicking a step opens a side drawer with its settings. After each save, `POST /validate` marks steps that need fixing with a red count and lists the rest in a banner. Activate saves first and runs only when nothing needs fixing. Active funnels show Save changes and Pause. The browser warns before leaving with unsaved changes.
 - **`components/automations/email-step.tsx`**: Email step drawer. Subject, then Template or Write HTML. Template shows thumbnails of saved templates and starter layouts. Picking a starter saves a copy with `api.templates.create` and uses it. A template fills the subject when it is empty. The preview shows the chosen template or the HTML. Send test saves the draft, then sends this step to one address with `api.automations.test(id, email, nodeId)`.
@@ -120,10 +126,11 @@ Parenthesis notation `(app)` defines an App Router **Route Group**. It does *not
 - **`media/page.tsx`**: Digital asset manager for uploading, organizing, and selecting images and graphics used in email campaigns. Delete asks for confirmation, then removes the file.
 - **`analytics/page.tsx`**: Dedicated Email Analytics analyzing delivery health, weekly opens and clicks, and top-performing email campaigns.
 - **`integrations/page.tsx`**: E-commerce and CRM connectors (Shopify, Stripe, Zapier, WordPress).
+- **`profile/page.tsx`**: Name, workspace name, and password. **Delete account** asks for the current password, then calls `DELETE /auth/me`, clears the session, and opens sign-in. A wrong password stays on the dialog.
 - **`settings/page.tsx`**: Workspace configuration, sender email domain verification, team roles, and notifications.
 - **`billing/page.tsx`**: Subscription plans (Pro Plan), payment methods, and invoice records.
 
-#### 4. Server-Side REST Endpoints (`app/api/*`)
+#### 5. Server-Side REST Endpoints (`app/api/*`)
 - **`api/analytics/route.ts`**: Returns weekly email delivery and click performance metrics.
 - **`api/calendar/route.ts`**: Returns scheduled email calendar events.
 - **`api/campaigns/route.ts`**: GET/POST endpoints for email campaign records.

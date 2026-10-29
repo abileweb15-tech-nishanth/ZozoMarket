@@ -59,19 +59,17 @@ class Settings(BaseSettings):
     SEND_BATCH_SIZE: int = 200
 
     # --- Email delivery ---
-    EMAIL_PROVIDER: Literal["console", "smtp", "resend", "mailtrap"] = "console"
+    EMAIL_PROVIDER: Literal["console", "resend", "ses"] = "console"
     EMAIL_FROM_ADDRESS: str = "hello@zozomarket.local"
     EMAIL_FROM_NAME: str = "ZozoMarket"
-    SMTP_HOST: str = "localhost"
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: str | None = None
-    SMTP_PASSWORD: SecretStr | None = None
-    SMTP_USE_TLS: bool = True
-    MAILTRAP_API_TOKEN: SecretStr | None = None
-    MAILTRAP_ACCOUNT_ID: int | None = None
-    MAILTRAP_SENDER_EMAIL: str = "hello@demomailtrap.co"
-    MAILTRAP_SENDER_NAME: str = "Mailtrap Test"
-    MAILTRAP_CATEGORY: str = "Integration Test"
+    AWS_ACCESS_KEY_ID: str | None = None
+    AWS_SECRET_ACCESS_KEY: SecretStr | None = None
+    AWS_REGION: str = "us-east-1"
+    SES_FROM_EMAIL: str = ""
+    SES_CONFIGURATION_SET: str = ""
+    # CloudWatch dimension published by the SES configuration set.
+    SES_CLOUDWATCH_DIMENSION_NAME: str = "campaign"
+    SES_CLOUDWATCH_DIMENSION_VALUE: str = "zozomarket"
     RESEND_API_KEY: SecretStr | None = None
     EMAIL_TRACKING_ENABLED: bool = True
 

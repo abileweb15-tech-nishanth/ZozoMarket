@@ -83,18 +83,21 @@ export default function DashboardPage() {
           <KpiCard
             label="Avg. open rate"
             value={kpis.emailOpenRate.value}
+            detail={kpis.emailOpenRate.detail}
             trend={kpis.emailOpenRate.trend}
             icon={MailOpen}
           />
           <KpiCard
             label="Avg. click rate"
             value={kpis.avgClickRate.value}
+            detail={kpis.avgClickRate.detail}
             trend={kpis.avgClickRate.trend}
             icon={MousePointerClick}
           />
           <KpiCard
             label="Delivery rate"
             value={kpis.deliveryRate.value}
+            detail={kpis.deliveryRate.detail}
             trend={kpis.deliveryRate.trend}
             icon={CheckCircle2}
           />

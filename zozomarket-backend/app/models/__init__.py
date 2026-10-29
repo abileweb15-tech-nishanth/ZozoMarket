@@ -15,6 +15,7 @@ from app.models.contact import Contact, SubscriptionStatus, Tag, contact_tags
 from app.models.form import Form, FormKind, FormStatus
 from app.models.media import MediaAsset, MediaType
 from app.models.message import EmailMessage, EmailStatDaily, MessageStatus
+from app.models.segment import Segment
 from app.models.template import EmailTemplate
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "MediaType",
     "MessageStatus",
     "NodeKind",
+    "Segment",
     "SubscriptionStatus",
     "Tag",
     "TriggerType",

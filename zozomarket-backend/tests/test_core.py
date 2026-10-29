@@ -1,12 +1,12 @@
 import asyncio
+import datetime as dt
 import time
 
 import pytest
 
 from app.core import security
 from app.core.config import settings
-from app.core.exceptions import ExternalServiceError
-from app.services.email_service import OutboundEmail, SMTPSender, SmtpSettings, get_sender
+from app.services.email_service import EmailDeliveryError, OutboundEmail, get_sender
 from app.services.template_service import render_blocks, render_merge_tags
 
 
@@ -102,90 +102,145 @@ def test_render_blocks_adds_unsubscribe_when_missing():
     assert kept.count("{{unsubscribe_url}}") == 1
 
 
-def test_mailtrap_message_includes_template_html(monkeypatch):
+def _ses_settings(monkeypatch, **overrides: object) -> None:
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "ses")
+    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setattr(settings, "AWS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "SES_FROM_EMAIL", "sender@example.com")
+    monkeypatch.setattr(settings, "SES_CONFIGURATION_SET", "tracking-set")
+    monkeypatch.setattr(settings, "EMAIL_FROM_NAME", "ZozoMarket")
+    for name, value in overrides.items():
+        monkeypatch.setattr(settings, name, value)
+
+
+def test_ses_send_forwards_html_and_configuration_set(monkeypatch):
     captured: dict[str, object] = {}
 
     class FakeClient:
-        def __init__(self, token: str) -> None:
-            captured["token"] = token
+        def send_email(self, **kwargs: object) -> dict[str, str]:
+            captured["kwargs"] = kwargs
+            return {"MessageId": "ses-1"}
 
-        def send(self, mail: object) -> dict[str, object]:
-            captured["mail"] = mail
-            return {"success": True, "message_ids": ["msg-1"]}
-
-    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "mailtrap")
-    monkeypatch.setattr(settings, "MAILTRAP_API_TOKEN", "test-token")
-    monkeypatch.setattr("mailtrap.MailtrapClient", FakeClient)
+    _ses_settings(monkeypatch)
+    monkeypatch.setattr("boto3.client", lambda *_args, **_kwargs: FakeClient())
     get_sender.cache_clear()
     try:
-        sender = get_sender()
         html = "<p>The fall menu is ready.</p>"
         result = asyncio.run(
-            sender.send(
-                OutboundEmail(to="nishanth5554@gmail.com", subject="[Test] Autumn note", html=html)
+            get_sender().send(
+                OutboundEmail(
+                    to="reader@example.com",
+                    subject="[Test] Autumn note",
+                    html=html,
+                    from_email="other@example.com",
+                    from_name="North Studio",
+                    reply_to="reply@example.com",
+                    headers={"List-Unsubscribe": "<https://example.com/unsub>"},
+                )
             )
         )
-        mail = captured["mail"]
-        assert mail.html == html
-        assert mail.subject == "[Test] Autumn note"
-        assert mail.to[0].email == "nishanth5554@gmail.com"
-        assert captured["token"] == "test-token"
-        assert result.provider_message_id == "msg-1"
+        request = captured["kwargs"]
+        simple = request["Content"]["Simple"]
+        assert simple["Body"]["Html"]["Data"] == html
+        assert simple["Subject"]["Data"] == "[Test] Autumn note"
+        assert request["Destination"]["ToAddresses"] == ["reader@example.com"]
+        assert request["FromEmailAddress"] == "North Studio <sender@example.com>"
+        assert request["ReplyToAddresses"] == ["reply@example.com"]
+        assert request["ConfigurationSetName"] == "tracking-set"
+        assert request["EmailTags"] == [{"Name": "campaign", "Value": "zozomarket"}]
+        assert simple["Headers"] == [
+            {"Name": "List-Unsubscribe", "Value": "<https://example.com/unsub>"}
+        ]
+        assert result.provider_message_id == "ses-1"
     finally:
         get_sender.cache_clear()
 
 
-def test_mailtrap_requires_token_before_send(monkeypatch):
-    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "mailtrap")
-    monkeypatch.setattr(settings, "MAILTRAP_API_TOKEN", None)
+def test_ses_message_rejected_is_permanent(monkeypatch):
+    from botocore.exceptions import ClientError
 
-    def refuse(*_args, **_kwargs):
-        raise AssertionError("Mailtrap API was called")
+    class FakeClient:
+        def send_email(self, **_kwargs: object) -> dict[str, str]:
+            raise ClientError(
+                {"Error": {"Code": "MessageRejected", "Message": "Email address is not verified."}},
+                "SendEmail",
+            )
 
-    monkeypatch.setattr("mailtrap.MailtrapClient", refuse)
+    _ses_settings(monkeypatch)
+    monkeypatch.setattr("boto3.client", lambda *_args, **_kwargs: FakeClient())
     get_sender.cache_clear()
     try:
-        with pytest.raises(ExternalServiceError, match="MAILTRAP_API_TOKEN"):
-            get_sender()
+        with pytest.raises(EmailDeliveryError, match="MessageRejected") as caught:
+            asyncio.run(
+                get_sender().send(
+                    OutboundEmail(to="reader@example.com", subject="Hi", html="<p>Hi</p>")
+                )
+            )
+        assert caught.value.permanent is True
     finally:
         get_sender.cache_clear()
 
 
-def test_mailtrap_port_465_uses_implicit_tls(monkeypatch):
-    opened: dict[str, int] = {}
+def test_ses_requires_credentials_before_calling_ses(monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("SES was called")
 
-    class FakeSmtp:
-        def __init__(self, host, port, timeout=30, context=None):
-            opened["port"] = port
+    _ses_settings(monkeypatch, AWS_ACCESS_KEY_ID="", AWS_SECRET_ACCESS_KEY=None)
+    monkeypatch.setattr("boto3.client", refuse)
+    get_sender.cache_clear()
+    try:
+        with pytest.raises(EmailDeliveryError, match="AWS_ACCESS_KEY_ID"):
+            asyncio.run(
+                get_sender().send(
+                    OutboundEmail(to="reader@example.com", subject="Hi", html="<p>Hi</p>")
+                )
+            )
+    finally:
+        get_sender.cache_clear()
 
-        def __enter__(self):
-            return self
 
-        def __exit__(self, *_args):
-            return None
+def test_ses_daily_counts_read_cloudwatch(monkeypatch):
+    from app.services import ses_stats
 
-        def login(self, username, password):
-            opened["login"] = 1
+    ses_stats._CACHE.clear()
+    seen: list[str] = []
 
-        def send_message(self, message):
-            opened["html"] = "fall menu" in message.as_string()
+    class FakeCloudWatch:
+        def get_metric_statistics(self, **kwargs: object) -> dict[str, object]:
+            seen.append(str(kwargs["MetricName"]))
+            assert kwargs["Namespace"] == "AWS/SES"
+            assert kwargs["Dimensions"] == [{"Name": "campaign", "Value": "zozomarket"}]
+            if kwargs["MetricName"] == "Delivery":
+                return {
+                    "Datapoints": [
+                        {"Timestamp": dt.datetime(2026, 10, 26, tzinfo=dt.UTC), "Sum": 3}
+                    ]
+                }
+            if kwargs["MetricName"] == "Send":
+                return {
+                    "Datapoints": [
+                        {"Timestamp": dt.datetime(2026, 10, 26, tzinfo=dt.UTC), "Sum": 4}
+                    ]
+                }
+            return {"Datapoints": []}
 
-    def refuse_plain(*_args, **_kwargs):
-        raise AssertionError("plain SMTP was used")
-
-    monkeypatch.setattr("smtplib.SMTP_SSL", FakeSmtp)
-    monkeypatch.setattr("smtplib.SMTP", refuse_plain)
-    sender = SMTPSender(
-        SmtpSettings("sandbox.smtp.mailtrap.io", 465, "inbox", "secret", True),
-        name="mailtrap",
-        require_login=True,
-    )
-    message = OutboundEmail(
-        to="mira@example.com", subject="[Test] Hi", html="<p>fall menu</p>"
-    )
-    result = asyncio.run(sender.send(message))
-    assert opened == {"port": 465, "login": 1, "html": True}
-    assert result.provider_message_id
+    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setattr(settings, "AWS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_NAME", "campaign")
+    monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_VALUE", "zozomarket")
+    monkeypatch.setattr("boto3.client", lambda *_args, **_kwargs: FakeCloudWatch())
+    day = dt.date(2026, 10, 26)
+    try:
+        result = asyncio.run(ses_stats.daily_counts(day, day))
+    finally:
+        ses_stats._CACHE.clear()
+    assert result is not None
+    assert result[day]["delivered"] == 3
+    assert result[day]["sent"] == 4
+    assert result[day]["opens"] == 0
+    assert set(seen) == {"Send", "Delivery", "Open", "Click", "Bounce"}
 
 
 def test_merge_tags_escape_values():
