@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -11,7 +11,7 @@ _DEFAULT_SECRET = "change-me-in-production-please-32+chars"  # noqa: S105
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=(BASE_DIR / ".env", BASE_DIR / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -24,7 +24,15 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     API_V1_PREFIX: str = "/api/v1"
     # Absolute public URL of this API; used to build tracking, unsubscribe and media links.
-    PUBLIC_BASE_URL: str = "http://localhost:8000"
+    PUBLIC_BASE_URL: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices("PUBLIC_BASE_URL", "API_URL", "BACKEND_URL", "REQUEST_URL"),
+    )
+    # URL of the frontend application making requests to this API.
+    FRONTEND_URL: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("FRONTEND_URL", "CLIENT_URL", "FRONTEND_REQUEST_URL"),
+    )
 
     # --- Security ---
     SECRET_KEY: SecretStr = SecretStr(_DEFAULT_SECRET)
@@ -98,6 +106,14 @@ class Settings(BaseSettings):
         if value.startswith("mysql://"):
             value = "mysql+asyncmy://" + value.removeprefix("mysql://")
         return value
+
+    @model_validator(mode="after")
+    def _normalize_urls(self) -> "Settings":
+        self.PUBLIC_BASE_URL = self.PUBLIC_BASE_URL.rstrip("/")
+        self.FRONTEND_URL = self.FRONTEND_URL.rstrip("/")
+        if self.FRONTEND_URL and self.FRONTEND_URL not in self.CORS_ORIGINS:
+            self.CORS_ORIGINS.append(self.FRONTEND_URL)
+        return self
 
     @model_validator(mode="after")
     def _production_guards(self) -> "Settings":

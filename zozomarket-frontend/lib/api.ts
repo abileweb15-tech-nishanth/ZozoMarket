@@ -234,7 +234,13 @@ export type WorkspaceSettings = {
   ownerEmail: string
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
+const resolveApiBase = (): string => {
+  const raw = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || 'http://localhost:8000/api/v1'
+  const trimmed = raw.trim().replace(/\/+$/, '')
+  return trimmed.endsWith('/api/v1') ? trimmed : `${trimmed}/api/v1`
+}
+
+const API_BASE = resolveApiBase()
 
 /** Single-object response envelope: { success, data: T } */
 type Envelope<T> = { success: boolean; data?: T; error?: string }
@@ -269,7 +275,7 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
       },
     })
   } catch {
-    throw new Error('Cannot reach the ZozoMarket API. Start it with: uvicorn app.main:app --port 8000')
+    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
   }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     if (await refreshAccessToken()) return request(path, init, false)
@@ -302,7 +308,7 @@ async function listRequest<T>(path: string, init?: RequestInit, retry = true): P
       },
     })
   } catch {
-    throw new Error('Cannot reach the ZozoMarket API. Start it with: uvicorn app.main:app --port 8000')
+    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
   }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     if (await refreshAccessToken()) return listRequest(path, init, false)
@@ -326,7 +332,7 @@ async function publicRequest<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
   } catch {
-    throw new Error('Cannot reach the ZozoMarket API. Start it with: uvicorn app.main:app --port 8000')
+    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
   }
   const body = (await response.json().catch(() => null)) as Envelope<T> | null
   if (!response.ok || !body?.success) {
