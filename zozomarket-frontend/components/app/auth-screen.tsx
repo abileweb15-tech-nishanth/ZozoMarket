@@ -25,7 +25,7 @@ export function AuthScreen({
   description: string
   error?: string
   children: React.ReactNode
-  footer: React.ReactNode
+  footer?: React.ReactNode
   wide?: boolean
 }) {
   return (
@@ -69,7 +69,7 @@ export function AuthScreen({
             )}
             <div className="mt-6">{children}</div>
           </div>
-          <p className="mt-4 text-center text-sm text-muted-foreground">{footer}</p>
+          {footer ? <p className="mt-4 text-center text-sm text-muted-foreground">{footer}</p> : null}
         </div>
       </section>
     </main>

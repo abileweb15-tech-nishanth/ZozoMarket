@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.config import settings
+from app.core.exceptions import ForbiddenError
 from app.schemas.auth import (
     AccountDelete,
     AuthSession,
@@ -18,6 +20,8 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/signup", response_model=ApiResponse[AuthSession], status_code=201)
 async def signup(db: DbSession, body: SignupRequest):
+    if not settings.SIGNUP_ENABLED:
+        raise ForbiddenError("Account registration is temporarily disabled", code="signup_disabled")
     return ApiResponse(data=await auth_service.signup(db, body))
 
 

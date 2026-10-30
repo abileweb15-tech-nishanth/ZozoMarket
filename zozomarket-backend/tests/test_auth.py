@@ -187,3 +187,24 @@ async def test_delete_account_removes_the_user_and_workspace(anon_client):
         },
     )
     assert again.status_code == 201, again.text
+
+
+async def test_signup_disabled(anon_client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SIGNUP_ENABLED", False)
+    res = await anon_client.post(
+        "/api/v1/auth/signup",
+        json={
+            "name": "Blocked User",
+            "email": "blocked@example.com",
+            "password": "correct-horse",
+            "workspaceName": "Blocked Studio",
+            "mailingAddress": "1 Road",
+            "fromName": "Blocked",
+            "fromEmail": "blocked@example.com",
+        },
+    )
+    assert res.status_code == 403
+    assert "Account registration is temporarily disabled" in res.json()["error"]
+

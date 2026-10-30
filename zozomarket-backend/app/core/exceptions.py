@@ -49,6 +49,11 @@ class UnauthorizedError(AppError):
     code = "unauthorized"
 
 
+class ForbiddenError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "forbidden"
+
+
 class PayloadTooLargeError(AppError):
     status_code = 413
     code = "payload_too_large"

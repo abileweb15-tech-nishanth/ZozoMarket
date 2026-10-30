@@ -52,6 +52,8 @@ const copy = [
   },
 ] as const
 
+const signupEnabled = process.env.NEXT_PUBLIC_SIGNUP_ENABLED === 'true'
+
 export default function SignupPage() {
   const router = useRouter()
   const [step, setStep] = useState(0)
@@ -71,6 +73,10 @@ export default function SignupPage() {
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
+    if (!signupEnabled) {
+      router.replace('/login')
+      return
+    }
     if (getAccessToken()) router.replace('/dashboard')
   }, [router])
 
@@ -135,6 +141,8 @@ export default function SignupPage() {
       setPending(false)
     }
   }
+
+  if (!signupEnabled) return null
 
   return (
     <AuthScreen

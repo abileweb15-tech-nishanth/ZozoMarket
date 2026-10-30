@@ -21,6 +21,7 @@ os.environ.update(
         "MEDIA_MAX_UPLOAD_MB": "1",
         "PUBLIC_BASE_URL": "http://testserver",
         "TASK_BACKEND": "inline",
+        "SIGNUP_ENABLED": "true",
     }
 )
 

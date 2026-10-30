@@ -8,6 +8,8 @@ import { AuthField, AuthLink, AuthScreen, describedBy, PasswordInput } from '@/c
 import { api } from '@/lib/api'
 import { getAccessToken, saveSession } from '@/lib/session'
 
+const signupEnabled = process.env.NEXT_PUBLIC_SIGNUP_ENABLED === 'true'
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -25,7 +27,7 @@ export default function LoginPage() {
       title="Sign in"
       description="Use the email and password from when you created the account."
       error={formError}
-      footer={<>New here? <AuthLink href="/signup">Create an account</AuthLink></>}
+      footer={signupEnabled ? <>New here? <AuthLink href="/signup">Create an account</AuthLink></> : undefined}
     >
       <form
         className="flex flex-col gap-4"

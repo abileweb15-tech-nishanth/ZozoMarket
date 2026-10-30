@@ -34,10 +34,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FRONTEND_URL", "CLIENT_URL", "FRONTEND_REQUEST_URL"),
     )
 
-    # --- Security ---
+    # --- Security & Auth ---
     SECRET_KEY: SecretStr = SecretStr(_DEFAULT_SECRET)
     ACCESS_TOKEN_MINUTES: int = 60
     REFRESH_TOKEN_DAYS: int = 14
+    # Public account registration toggle (set to false to temporarily stop signup)
+    SIGNUP_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SIGNUP_ENABLED", "ALLOW_SIGNUP"),
+    )
     # Optional service keys. The dashboard signs in with a JWT; an empty list does not
     # open the management API.
     API_KEYS: Annotated[list[str], NoDecode] = Field(default_factory=list)
