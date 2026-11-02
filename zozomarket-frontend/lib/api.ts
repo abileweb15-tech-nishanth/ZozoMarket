@@ -182,6 +182,26 @@ export type AutomationStep = {
   createdAt: string
 }
 
+export type NodeExecutionState = {
+  isCurrent: boolean
+  isCompleted: boolean
+  isSkipped: boolean
+  activeCount: number
+  completedCount: number
+  lastAction?: string | null
+  lastResult?: string | null
+  nextRunAt?: string | null
+  conditionOutcome?: 'true' | 'false' | null
+}
+
+export type ExecutionFlow = {
+  status: string
+  nodeStates: Record<string, NodeExecutionState>
+  activeCount: number
+  completedCount: number
+  enrolledCount: number
+}
+
 export type FormField = {
   name: string
   label: string
@@ -612,7 +632,11 @@ export const api = {
       request<Automation>('/automations', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Pick<Automation, 'name' | 'description' | 'trigger' | 'triggerType' | 'triggerConfig' | 'audience' | 'nodes' | 'edges'>>) =>
       request<Automation>(`/automations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    activate: (id: string) => request<Automation>(`/automations/${id}/activate`, { method: 'POST' }),
+    activate: (id: string, enrollExisting = true) => request<Automation>(`/automations/${id}/activate?enroll_existing=${enrollExisting}`, { method: 'POST' }),
+    enrollSubscribers: (id: string, restart = false) => request<{ enrolled: number }>(`/automations/${id}/enroll-subscribers?restart=${restart}`, { method: 'POST' }),
+    executionFlow: (id: string) => request<ExecutionFlow>(`/automations/${id}/execution-flow`),
+    advanceDelay: (id: string) => request<{ advanced: number }>(`/automations/${id}/advance-delay`, { method: 'POST' }),
+    simulateEvent: (id: string, event: 'open' | 'click' = 'open') => request<{ success: boolean }>(`/automations/${id}/simulate-event?event=${event}`, { method: 'POST' }),
     pause: (id: string) => request<Automation>(`/automations/${id}/pause`, { method: 'POST' }),
     archive: (id: string) => request<Automation>(`/automations/${id}/archive`, { method: 'POST' }),
     duplicate: (id: string) => request<Automation>(`/automations/${id}/duplicate`, { method: 'POST' }),

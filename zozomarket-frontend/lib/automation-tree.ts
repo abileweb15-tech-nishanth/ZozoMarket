@@ -19,7 +19,16 @@ export type TreeNode = {
 export const STEP_KINDS = ['Email', 'Delay', 'Condition', 'Add tag', 'Remove tag', 'Goal', 'End'] as const
 export type StepKind = (typeof STEP_KINDS)[number]
 
-const newId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+const newId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    } catch {
+      // Fallback if randomUUID throws
+    }
+  }
+  return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 8)
+}
 
 export function defaultStep(kind: StepKind | 'Trigger'): FlowNode {
   const config: Record<string, unknown> =

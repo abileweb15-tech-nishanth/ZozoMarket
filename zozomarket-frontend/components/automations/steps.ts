@@ -31,9 +31,12 @@ export const STEP_META: Record<string, { icon: LucideIcon; title: string; hint: 
 }
 
 const CONDITIONS: Record<string, string> = {
-  has_tag: 'Has tag',
   opened_previous: 'Opened the previous email',
+  not_opened_previous: 'Did not open the previous email',
   clicked_previous: 'Clicked the previous email',
+  not_clicked_previous: 'Did not click the previous email',
+  has_tag: 'Has tag',
+  not_has_tag: 'Does not have tag',
 }
 export const CONDITION_OPTIONS = Object.entries(CONDITIONS).map(([value, label]) => ({ value, label }))
 
@@ -67,7 +70,9 @@ export function summary(
       return `Wait ${plural(Number(config.amount) || 0, String(config.unit || 'days'))}`
     case 'Condition': {
       const type = String(config.type || 'opened_previous')
-      return type === 'has_tag' ? `Has tag: ${config.tag || '—'}` : CONDITIONS[type]
+      if (type === 'has_tag') return `Has tag: ${config.tag || '—'}`
+      if (type === 'not_has_tag') return `Does not have tag: ${config.tag || '—'}`
+      return CONDITIONS[type] || 'Condition'
     }
     case 'Add tag':
     case 'Remove tag':

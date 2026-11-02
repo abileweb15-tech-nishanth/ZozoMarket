@@ -36,12 +36,19 @@ export default function AutomationsPage() {
 
   async function create() {
     try {
+      const triggerId = 'trig_' + Math.random().toString(36).slice(2, 8)
+      const emailId = 'mail_' + Math.random().toString(36).slice(2, 8)
       const created = await api.automations.create({
         name: 'New automation',
         trigger: 'Contact subscribes',
         triggerType: 'contact_subscribed',
-        nodes: [{ kind: 'Trigger', label: 'Contact subscribes', config: {}, position: { x: 280, y: 40 } }],
-        edges: [],
+        nodes: [
+          { id: triggerId, kind: 'Trigger', label: 'Contact subscribes', config: {}, position: { x: 300, y: 0 } },
+          { id: emailId, kind: 'Email', label: 'Welcome Email', config: { subject: 'Welcome to our newsletter!' }, position: { x: 300, y: 170 } },
+        ] as any,
+        edges: [
+          { id: 'edge_' + Math.random().toString(36).slice(2, 8), source: triggerId, target: emailId, sourceHandle: null },
+        ] as any,
       })
       router.push(`/email/automations/${created.id}`)
     } catch (err) {
@@ -95,6 +102,19 @@ export default function AutomationsPage() {
                       <DropdownMenuItem onClick={() => router.push(`/email/automations/${row.id}/activity`)}>Activity</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => { void run(api.automations.duplicate(row.id).then((copy) => { setRows((current) => [copy, ...current]); return copy }), 'Automation duplicated') }}>Duplicate</DropdownMenuItem>
                       {row.status !== 'Active' && <DropdownMenuItem onClick={() => { void run(api.automations.activate(row.id), 'Automation is live') }}>Activate</DropdownMenuItem>}
+                      {row.status === 'Active' && (
+                        <DropdownMenuItem onClick={async () => {
+                          try {
+                            const res = await api.automations.enrollSubscribers(row.id)
+                            toast.success(`Enrolled ${res.enrolled} subscriber(s)`)
+                            load()
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Could not enroll subscribers')
+                          }
+                        }}>
+                          Enroll subscribers
+                        </DropdownMenuItem>
+                      )}
                       {row.status === 'Active' && <DropdownMenuItem onClick={() => { void run(api.automations.pause(row.id), 'Automation paused') }}>Pause</DropdownMenuItem>}
                       {row.status !== 'Archived' && <DropdownMenuItem onClick={() => { void run(api.automations.archive(row.id), 'Automation archived') }}>Archive</DropdownMenuItem>}
                       <DropdownMenuItem onClick={() => setTesting(row)}>Send test</DropdownMenuItem>

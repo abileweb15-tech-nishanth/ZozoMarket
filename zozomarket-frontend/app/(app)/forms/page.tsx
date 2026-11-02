@@ -116,7 +116,7 @@ export default function FormsPage() {
     try {
       const saved = await api.forms.update(selected.id, {
         name: name.trim() || selected.name,
-        kind: formKind === 'Landing Pages' ? 'Signup Forms' : formKind,
+        kind: formKind,
         title,
         description,
         successMessage: success,

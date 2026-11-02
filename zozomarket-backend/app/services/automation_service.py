@@ -17,8 +17,10 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import InvalidStateError, NotFoundError
 from app.core.tenancy import workspace_scope
+from app.models.account import Workspace
 from app.models.automation import (
     Automation,
     AutomationEnrollment,
@@ -230,7 +232,32 @@ def _publish(automation: Automation) -> None:
 
 
 async def create_automation(session: AsyncSession, data: AutomationCreate) -> Automation:
-    nodes = data.nodes or [FlowNode(kind=NodeKind.TRIGGER, label=data.trigger or "Trigger")]
+    if not data.nodes:
+        trigger_id = str(uuid.uuid4())
+        email_id = str(uuid.uuid4())
+        nodes = [
+            FlowNode(
+                id=trigger_id,
+                kind=NodeKind.TRIGGER,
+                label=data.trigger or "Contact subscribed",
+                position={"x": 250, "y": 40},
+            ),
+            FlowNode(
+                id=email_id,
+                kind=NodeKind.EMAIL,
+                label="Welcome email",
+                position={"x": 250, "y": 180},
+                config={
+                    "subject": "Welcome to our community!",
+                    "body": "Thank you for joining us. We are excited to have you on board!",
+                },
+            ),
+        ]
+        edges = [FlowEdge(id=str(uuid.uuid4()), source=trigger_id, target=email_id)]
+    else:
+        nodes = data.nodes
+        edges = data.edges
+
     automation = Automation(
         name=data.name,
         description=data.description,
@@ -240,7 +267,7 @@ async def create_automation(session: AsyncSession, data: AutomationCreate) -> Au
         audience=data.audience,
         status=AutomationStatus.DRAFT,
         nodes=normalize_nodes(nodes),
-        edges=normalize_edges(data.edges),
+        edges=normalize_edges(edges),
     )
     session.add(automation)
     await session.commit()
@@ -321,22 +348,29 @@ async def enroll(
     automation: Automation,
     contact_ids: Sequence[str],
     context: dict[str, Any] | None = None,
+    restart: bool = False,
 ) -> int:
-    """Enroll contacts (once per automation). Caller commits."""
+    """Enroll contacts (once per automation, or reset if restart=True). Caller commits."""
     if automation.status is not AutomationStatus.ACTIVE:
         raise InvalidStateError("Only active automations accept enrollments")
-    already = set(
+    contact_id_list = list(contact_ids)
+    if not contact_id_list:
+        return 0
+
+    existing_rows = list(
         await session.scalars(
-            select(AutomationEnrollment.contact_id).where(
+            select(AutomationEnrollment).where(
                 AutomationEnrollment.automation_id == automation.id,
-                AutomationEnrollment.contact_id.in_(list(contact_ids)),
+                AutomationEnrollment.contact_id.in_(contact_id_list),
             )
         )
     )
-    eligible = set(
+    existing_by_contact = {e.contact_id: e for e in existing_rows}
+
+    eligible_contacts = set(
         await session.scalars(
             select(Contact.id).where(
-                Contact.id.in_([c for c in contact_ids if c not in already]),
+                Contact.id.in_(contact_id_list),
                 Contact.status == SubscriptionStatus.SUBSCRIBED,
             )
         )
@@ -350,7 +384,21 @@ async def enroll(
     if start is None and graph["nodes"]:
         start = graph["nodes"][0].get("id")
     count = 0
-    for contact_id in eligible:
+    for contact_id in eligible_contacts:
+        existing = existing_by_contact.get(contact_id)
+        if existing:
+            if not restart:
+                continue
+            existing.status = EnrollmentStatus.ACTIVE
+            existing.current_node_id = start
+            existing.current_step = 0
+            existing.next_run_at = now
+            existing.last_message_id = None
+            existing.completed_at = None
+            existing.context = {**(context or {}), "graph": graph}
+            count += 1
+            continue
+
         try:
             async with session.begin_nested():
                 session.add(
@@ -408,16 +456,41 @@ async def _evaluate_condition(
     label = node.get("label", "").lower()
     if not kind:
         kind = "clicked_previous" if "click" in label else "opened_previous"
+
+    tag = str(config.get("tag", "")).strip().lower()
+    contact_tags = {t.lower() for t in contact.tag_names}
     if kind == "has_tag":
-        return str(config.get("tag", "")).lower() in {t.lower() for t in contact.tag_names}
+        return tag in contact_tags
+    if kind == "not_has_tag":
+        return tag not in contact_tags
+
     if not enrollment.last_message_id:
         return False
     message = await session.get(EmailMessage, enrollment.last_message_id)
     if message is None:
         return False
-    if kind == "clicked_previous":
-        return message.first_clicked_at is not None
-    return message.first_opened_at is not None
+
+    from app.services import ses_sync
+
+    if kind in ("opened_previous", "not_opened_previous"):
+        if message.first_opened_at is None:
+            await ses_sync.check_ses_message_open(session, message)
+        is_opened = message.first_opened_at is not None
+        if kind == "opened_previous":
+            return is_opened
+        if kind == "not_opened_previous":
+            return not is_opened
+
+    if kind in ("clicked_previous", "not_clicked_previous"):
+        if message.first_clicked_at is None:
+            await ses_sync.check_ses_message_click(session, message)
+        is_clicked = message.first_clicked_at is not None
+        if kind == "clicked_previous":
+            return is_clicked
+        if kind == "not_clicked_previous":
+            return not is_clicked
+
+    return False
 
 
 async def _send_node_email(
@@ -452,10 +525,26 @@ async def _send_node_email(
         attributes=contact.attributes,
         message_id=message.id,
     )
+    workspace = await session.get(Workspace, automation.workspace_id)
+    from_name = (config.get("from_name") or "").strip()
+    from_email = (config.get("from_email") or "").strip()
+    reply_to = (config.get("reply_to") or "").strip() or None
+    if workspace is not None:
+        from_name = from_name or (workspace.from_name or "").strip() or workspace.name
+        from_email = from_email or (workspace.from_email or "").strip()
+        reply_to = reply_to or ((workspace.reply_to or "").strip() or None)
+    from_name = from_name or settings.EMAIL_FROM_NAME
+    from_email = from_email or settings.EMAIL_FROM_ADDRESS
     try:
         result = await email_service.send_email(
             email_service.OutboundEmail(
-                to=contact.email, subject=rendered_subject, html=body, headers=headers
+                to=contact.email,
+                subject=rendered_subject,
+                html=body,
+                headers=headers,
+                from_name=from_name,
+                from_email=from_email,
+                reply_to=reply_to,
             )
         )
         await analytics_service.record_sent(session, message, result.provider_message_id)
@@ -748,9 +837,27 @@ async def send_test(
         email=email,
         message_id=message.id,
     )
+    workspace = await session.get(Workspace, automation.workspace_id)
+    from_name = (config.get("from_name") or "").strip()
+    from_email = (config.get("from_email") or "").strip()
+    reply_to = (config.get("reply_to") or "").strip() or None
+    if workspace is not None:
+        from_name = from_name or (workspace.from_name or "").strip() or workspace.name
+        from_email = from_email or (workspace.from_email or "").strip()
+        reply_to = reply_to or ((workspace.reply_to or "").strip() or None)
+    from_name = from_name or settings.EMAIL_FROM_NAME
+    from_email = from_email or settings.EMAIL_FROM_ADDRESS
     try:
         result = await email_service.send_email(
-            email_service.OutboundEmail(to=email, subject=f"[Test] {rendered_subject}", html=body, headers=headers)
+            email_service.OutboundEmail(
+                to=email,
+                subject=f"[Test] {rendered_subject}",
+                html=body,
+                headers=headers,
+                from_name=from_name,
+                from_email=from_email,
+                reply_to=reply_to,
+            )
         )
     except email_service.EmailDeliveryError as exc:
         await session.rollback()
@@ -766,3 +873,151 @@ async def enrollment_stats(session: AsyncSession, automation_id: str) -> dict[st
         .group_by(AutomationEnrollment.status)
     )
     return {status.value: count for status, count in rows.all()}
+
+
+async def get_execution_flow(session: AsyncSession, automation_id: str) -> dict[str, Any]:
+    automation = await get_automation(session, automation_id)
+    enrollments = list(
+        await session.scalars(
+            select(AutomationEnrollment).where(AutomationEnrollment.automation_id == automation.id)
+        )
+    )
+    steps = list(
+        await session.scalars(
+            select(AutomationStep)
+            .where(AutomationStep.automation_id == automation.id)
+            .order_by(AutomationStep.created_at.asc())
+        )
+    )
+
+    nodes = automation.nodes or []
+    node_ids = {n.get("id") for n in nodes if n.get("id")}
+    node_states: dict[str, dict[str, Any]] = {
+        nid: {
+            "is_current": False,
+            "is_completed": False,
+            "is_skipped": False,
+            "active_count": 0,
+            "completed_count": 0,
+            "last_action": None,
+            "last_result": None,
+            "next_run_at": None,
+            "condition_outcome": None,
+        }
+        for nid in node_ids
+    }
+
+    for st in steps:
+        if st.node_id in node_states:
+            state = node_states[st.node_id]
+            state["is_completed"] = True
+            state["completed_count"] += 1
+            state["last_action"] = st.action
+            state["last_result"] = st.result
+            if st.action == "condition":
+                state["condition_outcome"] = "true" if st.result == "true" else "false"
+
+    active_count = 0
+    completed_count = 0
+    for e in enrollments:
+        if e.status == EnrollmentStatus.ACTIVE:
+            active_count += 1
+            if e.current_node_id and e.current_node_id in node_states:
+                state = node_states[e.current_node_id]
+                state["is_current"] = True
+                state["active_count"] += 1
+                if e.next_run_at:
+                    state["next_run_at"] = e.next_run_at
+        elif e.status == EnrollmentStatus.COMPLETED:
+            completed_count += 1
+
+    latest_msg = (
+        await session.scalars(
+            select(EmailMessage)
+            .where(EmailMessage.automation_id == automation.id)
+            .order_by(EmailMessage.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    latest_msg_info = None
+    if latest_msg:
+        latest_msg_info = {
+            "id": latest_msg.id,
+            "to_email": latest_msg.to_email,
+            "subject": latest_msg.subject,
+            "sent_at": latest_msg.sent_at.isoformat() if latest_msg.sent_at else None,
+            "first_opened_at": latest_msg.first_opened_at.isoformat() if latest_msg.first_opened_at else None,
+            "first_clicked_at": latest_msg.first_clicked_at.isoformat() if latest_msg.first_clicked_at else None,
+            "is_opened": latest_msg.first_opened_at is not None,
+            "open_count": latest_msg.open_count,
+        }
+
+    return {
+        "status": automation.status.value,
+        "node_states": node_states,
+        "active_count": active_count,
+        "completed_count": completed_count,
+        "enrolled_count": len(enrollments),
+        "latest_message": latest_msg_info,
+    }
+
+
+async def advance_delay(session: AsyncSession, automation_id: str) -> int:
+    """Fast-forward active enrollments stuck waiting at a Delay node."""
+    now = utcnow()
+    active_enrollments = list(
+        await session.scalars(
+            select(AutomationEnrollment).where(
+                AutomationEnrollment.automation_id == automation_id,
+                AutomationEnrollment.status == EnrollmentStatus.ACTIVE,
+            )
+        )
+    )
+    advanced = 0
+    for e in active_enrollments:
+        if e.current_node_id:
+            e.context = {**(e.context or {}), "delayDone": e.current_node_id}
+        e.next_run_at = now
+        advanced += 1
+        await advance(session, e)
+    await session.commit()
+    return advanced
+
+
+async def simulate_message_event(session: AsyncSession, automation_id: str, event_type: str = "open") -> bool:
+    """Mark the latest email message of this automation as opened or clicked."""
+    enrollments = list(
+        await session.scalars(
+            select(AutomationEnrollment)
+            .where(AutomationEnrollment.automation_id == automation_id)
+            .order_by(AutomationEnrollment.updated_at.desc())
+        )
+    )
+    msg_id = None
+    for e in enrollments:
+        if e.last_message_id:
+            msg_id = e.last_message_id
+            break
+    if msg_id:
+        message = await session.get(EmailMessage, msg_id)
+    else:
+        message = (
+            await session.scalars(
+                select(EmailMessage)
+                .where(EmailMessage.automation_id == automation_id)
+                .order_by(EmailMessage.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+
+    if not message:
+        return False
+    now = utcnow()
+    if event_type == "open":
+        message.first_opened_at = now
+        message.open_count = (message.open_count or 0) + 1
+    elif event_type == "click":
+        message.first_clicked_at = now
+        message.click_count = (message.click_count or 0) + 1
+    await session.commit()
+    return True

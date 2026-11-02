@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, CloudDownload, FastForward, Play, Plus, Radio, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog, StatusBadge } from '@/components/app/shared'
-import { api, type FlowNode, type LeadForm, type Template, type WorkspaceSettings } from '@/lib/api'
+import { api, type ExecutionFlow, type FlowNode, type LeadForm, type NodeExecutionState, type Template, type WorkspaceSettings } from '@/lib/api'
 import {
   buildTree, countBranch, defaultStep, deleteUnreachable, ensureTrigger, hasChild, layout, placeAfter,
   removeStep, withEdges, type Graph, type Handle, type StepKind, type TreeNode,
@@ -42,6 +42,16 @@ export default function AutomationBuilder({ id }: { id: string }) {
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
+  const [flow, setFlow] = useState<ExecutionFlow | null>(null)
+
+  const refreshFlow = useCallback(async () => {
+    try {
+      const res = await api.automations.executionFlow(id)
+      setFlow(res)
+    } catch {
+      // ignore
+    }
+  }, [id])
 
   useEffect(() => {
     let active = true
@@ -59,6 +69,7 @@ export default function AutomationBuilder({ id }: { id: string }) {
         setForms(formRows)
         setWorkspace(workspaceRow)
         setReady(true)
+        void refreshFlow()
         return api.automations.validate(id)
       })
       .then((check) => { if (active && check) setProblems(toProblems(check.problems)) })
@@ -72,6 +83,14 @@ export default function AutomationBuilder({ id }: { id: string }) {
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
+
+  useEffect(() => {
+    void refreshFlow()
+    const timer = setInterval(() => {
+      void refreshFlow()
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [refreshFlow])
 
   const change = useCallback((next: Graph | ((current: Graph) => Graph)) => {
     setGraph(next)
@@ -138,6 +157,62 @@ export default function AutomationBuilder({ id }: { id: string }) {
     if (await save()) toast.success(status === 'Active' ? 'Saved. New contacts get this version.' : 'Draft saved')
   }
 
+  const skipDelay = async () => {
+    try {
+      setBusy(true)
+      const res = await api.automations.advanceDelay(id)
+      toast.success(`Advanced ${res.advanced} waiting step${res.advanced === 1 ? '' : 's'}`)
+      await refreshFlow()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not advance delay')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const simulateOpen = async () => {
+    try {
+      setBusy(true)
+      await api.automations.simulateEvent(id, 'open')
+      toast.success('Simulated email open! The condition check will evaluate to Yes (true).')
+      await refreshFlow()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not simulate open')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const syncSes = async () => {
+    try {
+      setBusy(true)
+      const res = await api.automations.syncSes(id)
+      if (res.openedCount > 0) {
+        toast.success(AWS SES detected  opened email(s)!)
+      } else {
+        toast.info('Checked AWS SES CloudWatch. No open events recorded yet.')
+      }
+      await refreshFlow()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not sync from AWS SES')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const reRunAutomation = async () => {
+    try {
+      setBusy(true)
+      const res = await api.automations.enrollSubscribers(id, true)
+      toast.success(`Restarted automation for ${res.enrolled} subscriber${res.enrolled === 1 ? '' : 's'}!`)
+      await refreshFlow()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not re-run automation')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const activate = async () => {
     if (!(await save())) return
     const check = await api.automations.validate(id).catch((err: Error) => { toast.error(err.message); return null })
@@ -149,7 +224,7 @@ export default function AutomationBuilder({ id }: { id: string }) {
     }
     try {
       setStatus((await api.automations.activate(id)).status)
-      toast.success('Automation is live')
+      toast.success('Automation is live and subscribers enrolled')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not activate')
     }
@@ -182,6 +257,25 @@ export default function AutomationBuilder({ id }: { id: string }) {
         {dirty && <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-2 rounded-full bg-amber-500" aria-hidden /> Unsaved changes</span>}
         <div className="ml-auto flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => leave(`/email/automations/${id}/activity`)}>Activity</Button>
+          {status === 'Active' && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  setBusy(true)
+                  const res = await api.automations.enrollSubscribers(id)
+                  toast.success(`Enrolled ${res.enrolled} subscriber${res.enrolled === 1 ? '' : 's'}`)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Could not enroll subscribers')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              Enroll subscribers
+            </Button>
+          )}
           <Button variant="outline" disabled={busy} onClick={() => { void saveDraft() }}>{status === 'Active' ? 'Save changes' : 'Save draft'}</Button>
           {status === 'Active'
             ? <Button variant="outline" onClick={() => { void pause() }}>Pause</Button>
@@ -189,10 +283,52 @@ export default function AutomationBuilder({ id }: { id: string }) {
         </div>
       </div>
 
-      {status === 'Active' && (
-        <p className="border-b border-border bg-sky-50 px-4 py-2 text-sm text-sky-800 dark:bg-sky-950 dark:text-sky-200">
-          This automation is live. Saved changes apply to new contacts. People already in the funnel keep the version they started with.
-        </p>
+      {(status === 'Active' || (flow && (flow.activeCount > 0 || flow.completedCount > 0 || flow.enrolledCount > 0))) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-sky-50/70 px-4 py-2 text-sm text-sky-900 dark:bg-sky-950/60 dark:text-sky-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn('size-2 rounded-full', status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500')} />
+            <span>{status === 'Active' ? 'This automation is live.' : `Automation is ${status.toLowerCase()}.`}</span>
+            {flow?.latestMessage && (
+              <span className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                flow.latestMessage.isOpened
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+              )}>
+                {flow.latestMessage.isOpened ? (
+                  <>
+                    <CheckCircle2 className="size-3" />
+                    <span>SES Open Confirmed ({flow.latestMessage.openCount || 1} opens)</span>
+                  </>
+                ) : (
+                  <>
+                    <Radio className="size-3 animate-pulse" />
+                    <span>SES: Waiting for open ({flow.latestMessage.toEmail})</span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-sky-300 bg-background/80" onClick={() => void refreshFlow()}>
+              <RefreshCw className="size-3" /> Refresh flow
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-sky-300 bg-background/80" onClick={() => void syncSes()}>
+              <CloudDownload className="size-3 text-sky-600" /> Sync AWS SES
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-sky-300 bg-background/80" onClick={() => void simulateOpen()}>
+              <Sparkles className="size-3 text-amber-500" /> Simulate email open
+            </Button>
+            {flow && Object.values(flow.nodeStates).some((s) => s.isCurrent) && (
+              <Button size="sm" className="h-7 text-xs gap-1 bg-amber-600 hover:bg-amber-700 text-white animate-pulse" onClick={() => void skipDelay()}>
+                <FastForward className="size-3" /> Skip delay & advance
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-sky-300 bg-background/80" onClick={() => void reRunAutomation()}>
+              <Play className="size-3 text-emerald-500" /> Re-run flow
+            </Button>
+          </div>
+        </div>
       )}
       {problemCount > 0 && (
         <div className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
@@ -232,6 +368,7 @@ export default function AutomationBuilder({ id }: { id: string }) {
               problems={problems.byNode}
               graph={graph}
               moving={moving}
+              flow={flow}
               onSelect={setSelected}
               onAdd={addStep}
               onMove={moveHere}
@@ -313,19 +450,20 @@ function toProblems(list: { nodeId: string | null; message: string }[]): Problem
 
 type Ctx = Parameters<typeof summary>[1]
 
-function Branch({ tree, ctx, selected, problems, graph, moving, onSelect, onAdd, onMove }: {
+function Branch({ tree, ctx, selected, problems, graph, moving, flow, onSelect, onAdd, onMove }: {
   tree: TreeNode
   ctx: Ctx
   selected: string | null
   problems: Record<string, string[]>
   graph: Graph
   moving: string | null
+  flow: ExecutionFlow | null
   onSelect: (id: string) => void
   onAdd: (parentId: string, handle: Handle, kind: StepKind) => void
   onMove: (parentId: string, handle: Handle) => void
 }) {
   const node = tree.node
-  const shared = { ctx, selected, problems, graph, moving, onSelect, onAdd, onMove }
+  const shared = { ctx, selected, problems, graph, moving, flow, onSelect, onAdd, onMove }
   const plus = (handle: Handle) => (
     <AddButton
       canEnd={!hasChild(graph, node.id, handle)}
@@ -337,23 +475,45 @@ function Branch({ tree, ctx, selected, problems, graph, moving, onSelect, onAdd,
 
   return (
     <div className="flex flex-col items-center">
-      <StepCard node={node} text={summary(node, ctx)} active={selected === node.id} problems={problems[node.id]} onClick={() => onSelect(node.id)} />
+      <StepCard
+        node={node}
+        text={summary(node, ctx)}
+        active={selected === node.id}
+        problems={problems[node.id]}
+        flowState={flow?.nodeStates[node.id]}
+        onClick={() => onSelect(node.id)}
+      />
       {node.kind === 'Condition' ? (
         <>
-          <Line />
+          <Line active={flow?.nodeStates[node.id]?.isCompleted} />
           <div className="relative flex gap-10">
             <div aria-hidden className="absolute top-0 right-[25%] left-[25%] h-px bg-border" />
             {(['true', 'false'] as const).map((handle) => {
               const child = handle === 'true' ? tree.yes : tree.no
+              const conditionState = flow?.nodeStates[node.id]
+              const outcome = conditionState?.conditionOutcome
+              const isTaken = outcome === handle
+              const isNotTaken = outcome && outcome !== handle
               return (
-                <div key={handle} className="flex min-w-72 flex-col items-center">
-                  <Line />
-                  <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', handle === 'true' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300')}>
-                    {handle === 'true' ? 'Yes' : 'No'}
+                <div key={handle} className={cn('flex min-w-72 flex-col items-center transition-opacity', isNotTaken && 'opacity-35')}>
+                  <Line active={isTaken} />
+                  <span
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-xs font-semibold transition',
+                      handle === 'true'
+                        ? isTaken
+                          ? 'bg-emerald-500 text-white shadow-md ring-2 ring-emerald-400'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : isTaken
+                        ? 'bg-rose-500 text-white shadow-md ring-2 ring-rose-400'
+                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
+                    )}
+                  >
+                    {handle === 'true' ? 'Yes' : 'No'} {isTaken && '✓'}
                   </span>
-                  <Line />
+                  <Line active={isTaken} />
                   {plus(handle)}
-                  {child && (<><Line /><Branch tree={child} {...shared} /></>)}
+                  {child && (<><Line active={isTaken} /><Branch tree={child} {...shared} /></>)}
                 </div>
               )
             })}
@@ -361,23 +521,40 @@ function Branch({ tree, ctx, selected, problems, graph, moving, onSelect, onAdd,
         </>
       ) : node.kind !== 'End' ? (
         <>
-          <Line />
+          <Line active={flow?.nodeStates[node.id]?.isCompleted || flow?.nodeStates[node.id]?.isCurrent} />
           {plus(null)}
-          {tree.next && (<><Line /><Branch tree={tree.next} {...shared} /></>)}
+          {tree.next && (<><Line active={flow?.nodeStates[node.id]?.isCompleted} /><Branch tree={tree.next} {...shared} /></>)}
         </>
       ) : null}
     </div>
   )
 }
 
-function Line() {
-  return <div aria-hidden className="h-6 w-px bg-border" />
+function Line({ active }: { active?: boolean }) {
+  return <div aria-hidden className={cn('h-6 w-px transition-colors', active ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-border')} />
 }
 
-function StepCard({ node, text, active, problems, onClick }: { node: FlowNode; text: string; active: boolean; problems?: string[]; onClick: () => void }) {
+function StepCard({
+  node,
+  text,
+  active,
+  problems,
+  flowState,
+  onClick,
+}: {
+  node: FlowNode
+  text: string
+  active: boolean
+  problems?: string[]
+  flowState?: NodeExecutionState
+  onClick: () => void
+}) {
   const meta = STEP_META[node.kind] ?? STEP_META.End
   const Icon = meta.icon
   const title = node.kind === 'Trigger' || node.kind === 'End' ? meta.title : node.label || meta.title
+  const isCurrent = flowState?.isCurrent
+  const isCompleted = flowState?.isCompleted && !isCurrent
+
   return (
     <button
       type="button"
@@ -385,18 +562,61 @@ function StepCard({ node, text, active, problems, onClick }: { node: FlowNode; t
       data-step={node.id}
       className={cn(
         'relative flex w-72 items-start gap-3 rounded-xl border bg-card p-3 text-left shadow-sm transition focus-visible:outline-2 focus-visible:outline-ring',
-        active ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-foreground/30',
+        isCurrent
+          ? 'border-amber-500 ring-2 ring-amber-400 shadow-[0_0_22px_rgba(245,158,11,0.55)] animate-pulse'
+          : active
+          ? 'border-primary ring-2 ring-primary/30'
+          : isCompleted
+          ? 'border-emerald-500/60 dark:border-emerald-500/40'
+          : 'border-border hover:border-foreground/30',
         problems?.length && 'border-red-400',
       )}
     >
-      <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', meta.tone)}><Icon className="size-4" aria-hidden /></span>
+      <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', meta.tone)}>
+        <Icon className="size-4" aria-hidden />
+      </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{meta.title}</span>
+        <span className="flex items-center justify-between text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <span>{meta.title}</span>
+          {isCurrent && (
+            <span className="flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
+              <Radio className="size-3 animate-ping" /> Active
+            </span>
+          )}
+          {isCompleted && (
+            <span className="flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="size-3" /> Done
+            </span>
+          )}
+        </span>
         <span className="block truncate text-sm font-medium">{title}</span>
         <span className="block truncate text-xs text-muted-foreground">{text}</span>
+        {flowState?.conditionOutcome && (
+          <span className={cn('mt-0.5 block text-[11px] font-bold', flowState.conditionOutcome === 'true' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+            Outcome: {flowState.conditionOutcome === 'true' ? 'Yes (Opened)' : 'No (Not opened)'}
+          </span>
+        )}
+        {isCurrent && flowState?.nextRunAt && (
+          <span className="mt-0.5 block text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+            Waiting until {new Date(flowState.nextRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+        )}
       </span>
+      {isCurrent && (
+        <span className="absolute -top-2.5 -right-2 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-md animate-pulse">
+          <Radio className="size-2.5 animate-ping" /> Current
+        </span>
+      )}
+      {isCompleted && (
+        <span className="absolute -top-2.5 -right-2 flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow-md">
+          <CheckCircle2 className="size-2.5" /> Done {flowState.completedCount > 1 ? `(${flowState.completedCount})` : ''}
+        </span>
+      )}
       {!!problems?.length && (
-        <span className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold text-white" title={problems.join(' ')}>
+        <span
+          className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold text-white"
+          title={problems.join(' ')}
+        >
           {problems.length}
         </span>
       )}

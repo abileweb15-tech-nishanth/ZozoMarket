@@ -155,3 +155,24 @@ class TriggerEventRequest(InputModel):
 
 class EnrollmentResult(CamelModel):
     enrolled: int
+
+
+class NodeExecutionState(CamelModel):
+    is_current: bool = False
+    is_completed: bool = False
+    is_skipped: bool = False
+    active_count: int = 0
+    completed_count: int = 0
+    last_action: str | None = None
+    last_result: str | None = None
+    next_run_at: datetime | None = None
+    condition_outcome: str | None = None
+
+
+class ExecutionFlowRead(CamelModel):
+    status: str
+    node_states: dict[str, NodeExecutionState] = Field(default_factory=dict)
+    active_count: int = 0
+    completed_count: int = 0
+    enrolled_count: int = 0
+    latest_message: dict[str, Any] | None = None

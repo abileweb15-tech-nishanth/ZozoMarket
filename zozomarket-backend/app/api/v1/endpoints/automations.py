@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
+from sqlalchemy import select
+from app.workers import jobs
 
 from app.api.deps import DbSession, PageParams
 from app.models.automation import AutomationStatus
-from app.models.contact import Contact
+from app.models.contact import Contact, SubscriptionStatus
 from app.schemas.automation import (
     AutomationCreate,
+    ExecutionFlowRead,
+    NodeExecutionState,
     AutomationRead,
     AutomationUpdate,
     EnrollmentRead,
@@ -77,9 +81,81 @@ async def update_automation(db: DbSession, automation_id: str, body: AutomationU
 
 
 @router.post("/{automation_id}/activate", response_model=ApiResponse[AutomationRead])
-async def activate_automation(db: DbSession, automation_id: str):
+async def activate_automation(
+    db: DbSession,
+    automation_id: str,
+    background_tasks: BackgroundTasks,
+    enroll_existing: bool = Query(default=True),
+):
     automation = await automation_service.set_status(db, automation_id, AutomationStatus.ACTIVE)
+    if enroll_existing:
+        contacts = list(
+            await db.scalars(
+                select(Contact.id).where(
+                    Contact.workspace_id == automation.workspace_id,
+                    Contact.status == SubscriptionStatus.SUBSCRIBED,
+                )
+            )
+        )
+        if contacts:
+            await automation_service.enroll(db, automation, contacts)
+            await db.commit()
+            background_tasks.add_task(jobs.scheduler_tick)
     return ApiResponse(data=AutomationRead.from_model(automation))
+
+
+@router.post("/{automation_id}/enroll-subscribers", response_model=ApiResponse[EnrollmentResult])
+async def enroll_subscribers(
+    db: DbSession,
+    automation_id: str,
+    background_tasks: BackgroundTasks,
+    restart: bool = Query(default=False),
+):
+    """Enroll all subscribed contacts in the workspace (resetting completed if restart=True)."""
+    automation = await automation_service.get_automation(db, automation_id)
+    contacts = list(
+        await db.scalars(
+            select(Contact.id).where(
+                Contact.workspace_id == automation.workspace_id,
+                Contact.status == SubscriptionStatus.SUBSCRIBED,
+            )
+        )
+    )
+    enrolled = 0
+    if contacts:
+        enrolled = await automation_service.enroll(db, automation, contacts, restart=restart)
+        await db.commit()
+        background_tasks.add_task(jobs.scheduler_tick)
+    return ApiResponse(data=EnrollmentResult(enrolled=enrolled))
+
+
+@router.get("/{automation_id}/execution-flow", response_model=ApiResponse[ExecutionFlowRead])
+async def get_execution_flow(db: DbSession, automation_id: str):
+    """Get live execution state of all nodes in the workflow canvas."""
+    data = await automation_service.get_execution_flow(db, automation_id)
+    return ApiResponse(data=ExecutionFlowRead.model_validate(data))
+
+
+@router.post("/{automation_id}/advance-delay", response_model=ApiResponse[dict[str, int]])
+async def advance_delay(db: DbSession, automation_id: str):
+    """Advance enrollments waiting on a delay step immediately."""
+    advanced = await automation_service.advance_delay(db, automation_id)
+    return ApiResponse(data={"advanced": advanced})
+
+
+@router.post("/{automation_id}/sync-ses", response_model=ApiResponse[dict[str, Any]])
+async def sync_ses(db: DbSession, automation_id: str):
+    """Sync open and click events from AWS SES / CloudWatch for this automation."""
+    from app.services import ses_sync
+    result = await ses_sync.sync_automation_ses(db, automation_id)
+    return ApiResponse(data=result)
+
+
+@router.post("/{automation_id}/simulate-event", response_model=ApiResponse[dict[str, bool]])
+async def simulate_event(db: DbSession, automation_id: str, event: str = Query(default="open")):
+    """Simulate opening or clicking the last sent email message for condition testing."""
+    success = await automation_service.simulate_message_event(db, automation_id, event)
+    return ApiResponse(data={"success": success})
 
 
 @router.post("/{automation_id}/pause", response_model=ApiResponse[AutomationRead])
