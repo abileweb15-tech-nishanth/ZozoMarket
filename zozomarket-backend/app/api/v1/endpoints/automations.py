@@ -154,6 +154,14 @@ async def sync_ses(db: DbSession, automation_id: str):
     return ApiResponse(data=SesSyncResult.model_validate(result))
 
 
+@router.post("/{automation_id}/poll-sqs", response_model=ApiResponse[dict[str, Any]])
+async def poll_sqs(db: DbSession, automation_id: str):
+    """Immediately poll and process pending events from AWS SQS."""
+    from app.services import sqs_event_service
+    result = await sqs_event_service.poll_and_process_sqs(db, max_messages=10, wait_seconds=2)
+    return ApiResponse(data=result)
+
+
 @router.post("/{automation_id}/simulate-event", response_model=ApiResponse[dict[str, bool]])
 async def simulate_event(db: DbSession, automation_id: str, event: str = Query(default="open")):
     """Simulate opening or clicking the last sent email message for condition testing."""

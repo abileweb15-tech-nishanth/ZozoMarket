@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # CloudWatch dimension published by the SES configuration set.
     SES_CLOUDWATCH_DIMENSION_NAME: str = "campaign"
     SES_CLOUDWATCH_DIMENSION_VALUE: str = "zozomarket"
+    # SQS Event Pipeline for SES granular open/click/bounce tracking
+    SQS_QUEUE_URL: str = "https://sqs.us-east-1.amazonaws.com/998882071456/zozomarket-ses-events-queue"
+    SQS_WORKER_ENABLED: bool = True
+    SQS_POLL_INTERVAL_SECONDS: float = 5.0
+    SQS_MAX_MESSAGES: int = 10
+    SQS_WAIT_TIME_SECONDS: int = 20
     RESEND_API_KEY: SecretStr | None = None
     EMAIL_TRACKING_ENABLED: bool = True
 

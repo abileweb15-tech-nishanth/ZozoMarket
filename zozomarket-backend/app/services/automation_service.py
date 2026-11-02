@@ -1021,3 +1021,76 @@ async def simulate_message_event(session: AsyncSession, automation_id: str, even
         message.click_count = (message.click_count or 0) + 1
     await session.commit()
     return True
+
+
+async def handle_email_opened(session: AsyncSession, message: EmailMessage) -> bool:
+    """Invoked when an SQS Open event confirms a specific recipient opened this email."""
+    if not message.automation_id or not message.contact_id:
+        return False
+
+    enrollment = (
+        await session.scalars(
+            select(AutomationEnrollment)
+            .where(
+                AutomationEnrollment.automation_id == message.automation_id,
+                AutomationEnrollment.contact_id == message.contact_id,
+                AutomationEnrollment.status == EnrollmentStatus.ACTIVE,
+            )
+            .order_by(AutomationEnrollment.updated_at.desc())
+            .limit(1)
+        )
+    ).first()
+
+    if enrollment and enrollment.current_node_id:
+        await _log(
+            session,
+            enrollment,
+            enrollment.current_node_id,
+            "opened",
+            f"Email '{message.subject}' opened by {message.to_email}",
+        )
+        logger.info(
+            "Logged SQS email open for automation %s, contact %s, node %s",
+            message.automation_id,
+            message.contact_id,
+            enrollment.current_node_id,
+        )
+        return True
+    return False
+
+
+async def handle_email_clicked(session: AsyncSession, message: EmailMessage, url: str | None = None) -> bool:
+    """Invoked when an SQS Click event confirms a recipient clicked a link in this email."""
+    if not message.automation_id or not message.contact_id:
+        return False
+
+    enrollment = (
+        await session.scalars(
+            select(AutomationEnrollment)
+            .where(
+                AutomationEnrollment.automation_id == message.automation_id,
+                AutomationEnrollment.contact_id == message.contact_id,
+                AutomationEnrollment.status == EnrollmentStatus.ACTIVE,
+            )
+            .order_by(AutomationEnrollment.updated_at.desc())
+            .limit(1)
+        )
+    ).first()
+
+    if enrollment and enrollment.current_node_id:
+        desc = f"Link clicked by {message.to_email}" + (f": {url}" if url else "")
+        await _log(
+            session,
+            enrollment,
+            enrollment.current_node_id,
+            "clicked",
+            desc,
+        )
+        logger.info(
+            "Logged SQS email click for automation %s, contact %s, node %s",
+            message.automation_id,
+            message.contact_id,
+            enrollment.current_node_id,
+        )
+        return True
+    return False

@@ -49,6 +49,19 @@ class EmailMessage(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     bounced_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     open_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     click_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_clicked_url: Mapped[str | None] = mapped_column(Text)
+
+    @property
+    def opened(self) -> bool:
+        return self.first_opened_at is not None
+
+    @property
+    def clicked(self) -> bool:
+        return self.first_clicked_at is not None
+
+    @property
+    def bounced(self) -> bool:
+        return self.status == MessageStatus.BOUNCED
 
 
 class EmailStatDaily(UUIDMixin, WorkspaceMixin, Base):

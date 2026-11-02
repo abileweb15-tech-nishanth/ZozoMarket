@@ -232,3 +232,4 @@ async def sync_automation_ses(session: AsyncSession, automation_id: str) -> dict
         "clicked_count": clicked_count,
         "results": results,
     }
+

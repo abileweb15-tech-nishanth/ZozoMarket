@@ -659,6 +659,7 @@ export const api = {
         newlyDetected: boolean
       }>
     }>(`/automations/${id}/sync-ses`, { method: 'POST' }),
+    pollSqs: (id: string) => request<Record<string, unknown>>(`/automations/${id}/poll-sqs`, { method: 'POST' }),
     advanceDelay: (id: string) => request<{ advanced: number }>(`/automations/${id}/advance-delay`, { method: 'POST' }),
     simulateEvent: (id: string, event: 'open' | 'click' = 'open') => request<{ success: boolean }>(`/automations/${id}/simulate-event?event=${event}`, { method: 'POST' }),
     pause: (id: string) => request<Automation>(`/automations/${id}/pause`, { method: 'POST' }),

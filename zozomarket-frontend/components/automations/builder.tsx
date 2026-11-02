@@ -186,11 +186,16 @@ export default function AutomationBuilder({ id }: { id: string }) {
   const syncSes = async () => {
     try {
       setBusy(true)
+      try {
+        await api.automations.pollSqs(id)
+      } catch {
+        // Fallback gracefully to direct SES sync
+      }
       const res = await api.automations.syncSes(id)
       if (res.openedCount > 0) {
         toast.success(`AWS SES detected ${res.openedCount} opened email(s)!`)
       } else {
-        toast.info('Checked AWS SES CloudWatch. No open events recorded yet.')
+        toast.info('Checked AWS SQS & SES. No new open events recorded yet.')
       }
       await refreshFlow()
     } catch (err) {

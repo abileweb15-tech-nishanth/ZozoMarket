@@ -18,6 +18,7 @@ from app.core.exceptions import error_response, register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.tenancy import install_tenant_filter
 from app.workers.scheduler import Scheduler
+from app.workers.sqs_worker import SqsWorker
 
 install_tenant_filter()
 
@@ -34,11 +35,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = Scheduler()
     if settings.SCHEDULER_ENABLED and settings.TASK_BACKEND == "inline":
         scheduler.start()
+
+    sqs_worker = SqsWorker()
+    if settings.SQS_WORKER_ENABLED:
+        sqs_worker.start()
+
     logger.info("Management API requires a JWT access token")
     logger.info("%s v%s started (%s)", settings.APP_NAME, __version__, settings.ENVIRONMENT)
     try:
         yield
     finally:
+        await sqs_worker.stop()
         await scheduler.stop()
         await database.engine.dispose()
 
