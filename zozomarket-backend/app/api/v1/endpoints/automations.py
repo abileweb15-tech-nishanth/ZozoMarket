@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, Query, status
 from sqlalchemy import select
 from app.workers import jobs
@@ -19,6 +21,7 @@ from app.schemas.automation import (
     TriggerEventRequest,
     WorkflowProblem,
     WorkflowValidation,
+    SesSyncResult,
 )
 from app.schemas.common import ApiResponse, ListResponse, SuccessResponse
 from app.services import automation_service, contact_service
@@ -143,12 +146,12 @@ async def advance_delay(db: DbSession, automation_id: str):
     return ApiResponse(data={"advanced": advanced})
 
 
-@router.post("/{automation_id}/sync-ses", response_model=ApiResponse[dict[str, Any]])
+@router.post("/{automation_id}/sync-ses", response_model=ApiResponse[SesSyncResult])
 async def sync_ses(db: DbSession, automation_id: str):
     """Sync open and click events from AWS SES / CloudWatch for this automation."""
     from app.services import ses_sync
     result = await ses_sync.sync_automation_ses(db, automation_id)
-    return ApiResponse(data=result)
+    return ApiResponse(data=SesSyncResult.model_validate(result))
 
 
 @router.post("/{automation_id}/simulate-event", response_model=ApiResponse[dict[str, bool]])

@@ -200,6 +200,16 @@ export type ExecutionFlow = {
   activeCount: number
   completedCount: number
   enrolledCount: number
+  latestMessage?: {
+    id: string
+    toEmail: string
+    subject: string
+    sentAt: string | null
+    firstOpenedAt: string | null
+    firstClickedAt: string | null
+    isOpened: boolean
+    openCount: number
+  } | null
 }
 
 export type FormField = {
@@ -635,6 +645,20 @@ export const api = {
     activate: (id: string, enrollExisting = true) => request<Automation>(`/automations/${id}/activate?enroll_existing=${enrollExisting}`, { method: 'POST' }),
     enrollSubscribers: (id: string, restart = false) => request<{ enrolled: number }>(`/automations/${id}/enroll-subscribers?restart=${restart}`, { method: 'POST' }),
     executionFlow: (id: string) => request<ExecutionFlow>(`/automations/${id}/execution-flow`),
+    syncSes: (id: string) => request<{
+      checked: number
+      openedCount: number
+      clickedCount: number
+      results: Array<{
+        messageId: string
+        toEmail: string
+        sentAt: string | null
+        firstOpenedAt: string | null
+        openCount: number
+        isOpened: boolean
+        newlyDetected: boolean
+      }>
+    }>(`/automations/${id}/sync-ses`, { method: 'POST' }),
     advanceDelay: (id: string) => request<{ advanced: number }>(`/automations/${id}/advance-delay`, { method: 'POST' }),
     simulateEvent: (id: string, event: 'open' | 'click' = 'open') => request<{ success: boolean }>(`/automations/${id}/simulate-event?event=${event}`, { method: 'POST' }),
     pause: (id: string) => request<Automation>(`/automations/${id}/pause`, { method: 'POST' }),

@@ -169,10 +169,39 @@ class NodeExecutionState(CamelModel):
     condition_outcome: str | None = None
 
 
+class LatestMessageRead(CamelModel):
+    id: str
+    to_email: str
+    subject: str
+    sent_at: str | None = None
+    first_opened_at: str | None = None
+    first_clicked_at: str | None = None
+    is_opened: bool = False
+    open_count: int = 0
+
+
 class ExecutionFlowRead(CamelModel):
     status: str
     node_states: dict[str, NodeExecutionState] = Field(default_factory=dict)
     active_count: int = 0
     completed_count: int = 0
     enrolled_count: int = 0
-    latest_message: dict[str, Any] | None = None
+    latest_message: LatestMessageRead | None = None
+
+
+
+class SesMessageSyncResult(CamelModel):
+    message_id: str
+    to_email: str
+    sent_at: str | None = None
+    first_opened_at: str | None = None
+    open_count: int = 0
+    is_opened: bool = False
+    newly_detected: bool = False
+
+
+class SesSyncResult(CamelModel):
+    checked: int = 0
+    opened_count: int = 0
+    clicked_count: int = 0
+    results: list[SesMessageSyncResult] = Field(default_factory=list)

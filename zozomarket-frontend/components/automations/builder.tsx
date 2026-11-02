@@ -188,7 +188,7 @@ export default function AutomationBuilder({ id }: { id: string }) {
       setBusy(true)
       const res = await api.automations.syncSes(id)
       if (res.openedCount > 0) {
-        toast.success(AWS SES detected  opened email(s)!)
+        toast.success(`AWS SES detected ${res.openedCount} opened email(s)!`)
       } else {
         toast.info('Checked AWS SES CloudWatch. No open events recorded yet.')
       }

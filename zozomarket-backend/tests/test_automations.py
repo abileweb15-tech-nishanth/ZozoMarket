@@ -187,3 +187,13 @@ async def test_other_workspace_cannot_read_the_automation(client):
     token = other.json()["data"]["accessToken"]
     client.headers["Authorization"] = f"Bearer {token}"
     assert (await client.get(f"{BASE}/{saved['id']}")).status_code == 404
+
+
+
+async def test_sync_ses_endpoint(client):
+    saved = await _automation(client)
+    res = await client.post(f"{BASE}/{saved['id']}/sync-ses")
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert "checked" in data
+    assert "openedCount" in data
