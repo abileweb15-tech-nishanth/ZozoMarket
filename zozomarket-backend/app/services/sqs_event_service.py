@@ -92,6 +92,64 @@ def _delete_message_sync(queue_url: str, receipt_handle: str) -> bool:
         return False
 
 
+def evaluate_open_event(
+    send_timestamp: dt.datetime | str | None,
+    open_timestamp: dt.datetime | str | None,
+    already_opened: bool,
+    had_bot_scan: bool,
+    threshold_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Classify open event as bot scan, first human open, transition from bot, or subsequent open."""
+    send_dt = _parse_iso_timestamp(send_timestamp) if isinstance(send_timestamp, str) else send_timestamp
+    open_dt = _parse_iso_timestamp(open_timestamp) if isinstance(open_timestamp, str) else open_timestamp
+
+    if send_dt and send_dt.tzinfo is None:
+        send_dt = send_dt.replace(tzinfo=dt.UTC)
+    if open_dt and open_dt.tzinfo is None:
+        open_dt = open_dt.replace(tzinfo=dt.UTC)
+
+    time_diff_seconds = (open_dt - send_dt).total_seconds() if (send_dt and open_dt) else 999.0
+
+    if already_opened:
+        # Subsequent human open: update last open, increment count, no duplicate automation trigger
+        return {
+            "action": "UPDATE_LAST_OPEN",
+            "is_human": True,
+            "is_bot": False,
+            "trigger_automation": False,
+            "time_diff": time_diff_seconds,
+        }
+
+    if time_diff_seconds < threshold_seconds:
+        # Bot scan: too fast for human reading (< 5.0s)
+        return {
+            "action": "RECORD_BOT_SCAN",
+            "is_bot": True,
+            "is_human": False,
+            "trigger_automation": False,
+            "time_diff": time_diff_seconds,
+        }
+
+    if had_bot_scan:
+        # Bot suspicion cleared: real human opened after bot pre-fetch!
+        return {
+            "action": "TRANSITION_BOT_TO_HUMAN",
+            "is_human": True,
+            "is_bot": False,
+            "trigger_automation": True,
+            "time_diff": time_diff_seconds,
+        }
+
+    # First genuine human open
+    return {
+        "action": "FIRST_HUMAN_OPEN",
+        "is_human": True,
+        "is_bot": False,
+        "trigger_automation": True,
+        "time_diff": time_diff_seconds,
+    }
+
+
 async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, Any]) -> dict[str, Any]:
     """Process a single unpacked SES event dictionary."""
     event_type = ses_event.get("eventType") or ses_event.get("notificationType") or ""
@@ -129,21 +187,85 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
     if event_type == "Open":
         open_data = ses_event.get("open") or {}
         opened_at = _parse_iso_timestamp(open_data.get("timestamp"))
+        send_time = mail.get("timestamp") or message.sent_at
 
-        was_first_open = message.first_opened_at is None
-        if was_first_open:
-            message.first_opened_at = opened_at
+        already_opened = message.opened
+        had_bot_scan = bool(message.is_bot_suspected or message.bot_scan_at)
 
-        message.open_count = (message.open_count or 0) + 1
+        eval_res = evaluate_open_event(
+            send_timestamp=send_time,
+            open_timestamp=opened_at,
+            already_opened=already_opened,
+            had_bot_scan=had_bot_scan,
+            threshold_seconds=5.0,
+        )
 
-        if was_first_open:
+        action = eval_res["action"]
+        time_diff = eval_res["time_diff"]
+
+        if action == "RECORD_BOT_SCAN":
+            if message.bot_scan_at is None:
+                message.bot_scan_at = opened_at
+            message.last_bot_scan_at = opened_at
+            message.is_bot_suspected = True
+            message.status = MessageStatus.BOT_SUSPECTED
+            result["action_taken"] = f"bot_scan_recorded (diff={time_diff:.2f}s < 5.0s, no_automation)"
+            logger.info(
+                "Bot scan detected for message %s (recipient %s, diff %.2fs). Automation held.",
+                message.id,
+                message.to_email,
+                time_diff,
+            )
+
+        elif action == "TRANSITION_BOT_TO_HUMAN":
+            if message.first_opened_at is None:
+                message.first_opened_at = opened_at
+            message.last_opened_at = opened_at
+            message.open_count = (message.open_count or 0) + 1
+            message.is_bot_suspected = False
+            message.status = MessageStatus.HUMAN_OPENED
+
             await analytics_service.bump_stats(
                 session, message.campaign_id, workspace_id=message.workspace_id, opens=1
             )
+            await automation_service.handle_email_opened(session, message)
+            result["action_taken"] = f"bot_to_human_transition (diff={time_diff:.2f}s, trigger_automation=True)"
+            logger.info(
+                "Bot suspicion cleared for message %s (recipient %s). Human open confirmed; automation triggered.",
+                message.id,
+                message.to_email,
+            )
 
-        # Trigger automation workflow advancement for this specific recipient
-        await automation_service.handle_email_opened(session, message)
-        result["action_taken"] = f"open_recorded (count={message.open_count}, first={was_first_open})"
+        elif action == "FIRST_HUMAN_OPEN":
+            message.first_opened_at = opened_at
+            message.last_opened_at = opened_at
+            message.open_count = (message.open_count or 0) + 1
+            message.is_bot_suspected = False
+            message.status = MessageStatus.HUMAN_OPENED
+
+            await analytics_service.bump_stats(
+                session, message.campaign_id, workspace_id=message.workspace_id, opens=1
+            )
+            await automation_service.handle_email_opened(session, message)
+            result["action_taken"] = f"first_human_open (diff={time_diff:.2f}s, trigger_automation=True)"
+            logger.info(
+                "First human open for message %s (recipient %s, diff %.2fs). Automation triggered.",
+                message.id,
+                message.to_email,
+                time_diff,
+            )
+
+        elif action == "UPDATE_LAST_OPEN":
+            message.last_opened_at = opened_at
+            message.open_count = (message.open_count or 0) + 1
+            message.is_bot_suspected = False
+            result["action_taken"] = f"subsequent_open (count={message.open_count}, no_duplicate_automation)"
+            logger.info(
+                "Subsequent open for message %s (recipient %s, count %d). Last open updated.",
+                message.id,
+                message.to_email,
+                message.open_count,
+            )
 
     elif event_type == "Click":
         click_data = ses_event.get("click") or {}
@@ -158,9 +280,14 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
             message.first_opened_at = clicked_at
             message.open_count = max(message.open_count or 0, 1)
 
+        message.last_opened_at = clicked_at
         message.click_count = (message.click_count or 0) + 1
         if clicked_url:
             message.last_clicked_url = clicked_url
+
+        # A click definitively proves human interaction -> clear any bot suspicion
+        message.is_bot_suspected = False
+        message.status = MessageStatus.HUMAN_OPENED
 
         if was_first_click:
             await analytics_service.bump_stats(
@@ -260,3 +387,4 @@ async def poll_and_process_sqs(
         "events": events_summary,
         "status": "success",
     }
+

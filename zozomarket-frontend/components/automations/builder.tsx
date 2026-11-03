@@ -303,7 +303,12 @@ export default function AutomationBuilder({ id }: { id: string }) {
                 {flow.latestMessage.isOpened ? (
                   <>
                     <CheckCircle2 className="size-3" />
-                    <span>SES Open Confirmed ({flow.latestMessage.openCount || 1} opens)</span>
+                    <span>Human Open Confirmed ({flow.latestMessage.openCount || 1} opens)</span>
+                  </>
+                ) : flow.latestMessage.isBotSuspected ? (
+                  <>
+                    <AlertTriangle className="size-3 text-amber-600" />
+                    <span>Bot Scan Filtered (&lt; 5s) &middot; Waiting for Human</span>
                   </>
                 ) : (
                   <>

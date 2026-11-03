@@ -175,7 +175,10 @@ class LatestMessageRead(CamelModel):
     subject: str
     sent_at: str | None = None
     first_opened_at: str | None = None
+    last_opened_at: str | None = None
     first_clicked_at: str | None = None
+    bot_scan_at: str | None = None
+    is_bot_suspected: bool = False
     is_opened: bool = False
     open_count: int = 0
 

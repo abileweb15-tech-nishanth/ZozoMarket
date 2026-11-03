@@ -206,7 +206,10 @@ export type ExecutionFlow = {
     subject: string
     sentAt: string | null
     firstOpenedAt: string | null
+    lastOpenedAt: string | null
     firstClickedAt: string | null
+    botScanAt: string | null
+    isBotSuspected: boolean
     isOpened: boolean
     openCount: number
   } | null

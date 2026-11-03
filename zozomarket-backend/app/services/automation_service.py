@@ -473,9 +473,9 @@ async def _evaluate_condition(
     from app.services import ses_sync
 
     if kind in ("opened_previous", "not_opened_previous"):
-        if message.first_opened_at is None:
+        if message.first_opened_at is None and not getattr(message, "is_bot_suspected", False):
             await ses_sync.check_ses_message_open(session, message)
-        is_opened = message.first_opened_at is not None
+        is_opened = message.first_opened_at is not None and not getattr(message, "is_bot_suspected", False)
         if kind == "opened_previous":
             return is_opened
         if kind == "not_opened_previous":
@@ -947,8 +947,11 @@ async def get_execution_flow(session: AsyncSession, automation_id: str) -> dict[
             "subject": latest_msg.subject,
             "sent_at": latest_msg.sent_at.isoformat() if latest_msg.sent_at else None,
             "first_opened_at": latest_msg.first_opened_at.isoformat() if latest_msg.first_opened_at else None,
+            "last_opened_at": latest_msg.last_opened_at.isoformat() if latest_msg.last_opened_at else None,
             "first_clicked_at": latest_msg.first_clicked_at.isoformat() if latest_msg.first_clicked_at else None,
-            "is_opened": latest_msg.first_opened_at is not None,
+            "bot_scan_at": latest_msg.bot_scan_at.isoformat() if latest_msg.bot_scan_at else None,
+            "is_bot_suspected": latest_msg.is_bot_suspected,
+            "is_opened": latest_msg.opened,
             "open_count": latest_msg.open_count,
         }
 

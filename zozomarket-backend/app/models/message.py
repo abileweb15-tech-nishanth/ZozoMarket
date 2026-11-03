@@ -16,6 +16,8 @@ class MessageStatus(StrEnum):
     DELIVERED = "delivered"
     BOUNCED = "bounced"
     FAILED = "failed"
+    BOT_SUSPECTED = "bot_suspected"
+    HUMAN_OPENED = "human_opened"
 
 
 class EmailMessage(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
@@ -50,10 +52,18 @@ class EmailMessage(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     open_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     click_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_clicked_url: Mapped[str | None] = mapped_column(Text)
+    bot_scan_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_bot_scan_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    is_bot_suspected: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     @property
     def opened(self) -> bool:
-        return self.first_opened_at is not None
+        return self.first_opened_at is not None and not self.is_bot_suspected
+
+    @property
+    def opened_at(self) -> datetime | None:
+        return self.first_opened_at
 
     @property
     def clicked(self) -> bool:
