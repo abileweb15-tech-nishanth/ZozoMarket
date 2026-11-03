@@ -148,9 +148,17 @@ async def advance_delay(db: DbSession, automation_id: str):
 
 @router.post("/{automation_id}/sync-ses", response_model=ApiResponse[SesSyncResult])
 async def sync_ses(db: DbSession, automation_id: str):
-    """Sync open and click events from AWS SES / CloudWatch for this automation."""
-    from app.services import ses_sync
-    result = await ses_sync.sync_automation_ses(db, automation_id)
+    """Drain the SQS queue for per-recipient open/click events, then return a
+    summary for this automation.  We deliberately skip the CloudWatch aggregate
+    path here because aggregate metrics are workspace-wide and would incorrectly
+    mark every recipient's email as opened the moment *any* subscriber opens theirs.
+    """
+    from app.services import sqs_event_service
+    # 1. Flush all pending SQS events (per-recipient, real-time)
+    await sqs_event_service.poll_and_process_sqs(db, max_messages=10, wait_seconds=2)
+    # 2. Return a lightweight per-message summary for the canvas
+    from app.services.ses_sync import summarise_automation_messages
+    result = await summarise_automation_messages(db, automation_id)
     return ApiResponse(data=SesSyncResult.model_validate(result))
 
 

@@ -167,6 +167,9 @@ class NodeExecutionState(CamelModel):
     last_result: str | None = None
     next_run_at: datetime | None = None
     condition_outcome: str | None = None
+    # Per-branch counts for condition nodes: how many subscribers went Yes / No
+    true_count: int = 0
+    false_count: int = 0
 
 
 class LatestMessageRead(CamelModel):

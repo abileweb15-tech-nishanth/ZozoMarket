@@ -140,7 +140,7 @@ def graph_problems(automation: Automation) -> list[dict[str, str | None]]:
     for node in nodes:
         config = node.get("config") or {}
         needs_tag = node.get("kind") in (NodeKind.ADD_TAG.value, NodeKind.REMOVE_TAG.value) or (
-            node.get("kind") == NodeKind.CONDITION.value and config.get("type") == "has_tag"
+            node.get("kind") == NodeKind.CONDITION.value and config.get("type") in ("has_tag", "not_has_tag")
         )
         if needs_tag and not str(config.get("tag", "")).strip():
             problems.append({"node_id": node.get("id"), "message": f"Step '{node.get('label')}' needs a tag"})
@@ -451,12 +451,22 @@ async def handle_event(
 async def _evaluate_condition(
     session: AsyncSession, node: dict[str, Any], enrollment: AutomationEnrollment, contact: Contact
 ) -> bool:
+    """Evaluate a condition node strictly per-recipient using individual email_messages records.
+
+    IMPORTANT: We deliberately do NOT call ses_sync (CloudWatch aggregate metrics) here.
+    CloudWatch metrics are workspace-wide aggregates; using them would mark every
+    recipient as "opened" the moment *anyone* in the batch opens their email.
+    Per-recipient truth comes exclusively from:
+      1. The SQS worker (real-time SES Open/Click events -> first_opened_at / first_clicked_at).
+      2. The pixel/link tracking endpoints (email_service.personalise injects tracking tokens).
+    """
     config = node.get("config") or {}
     kind = config.get("type")
     label = node.get("label", "").lower()
     if not kind:
         kind = "clicked_previous" if "click" in label else "opened_previous"
 
+    # --- Tag-based conditions (no email record needed) ---
     tag = str(config.get("tag", "")).strip().lower()
     contact_tags = {t.lower() for t in contact.tag_names}
     if kind == "has_tag":
@@ -464,32 +474,47 @@ async def _evaluate_condition(
     if kind == "not_has_tag":
         return tag not in contact_tags
 
+    # --- Email engagement conditions: strictly per-recipient ---
     if not enrollment.last_message_id:
+        logger.debug(
+            "Condition node %s for enrollment %s: no last_message_id -> False",
+            node.get("id"), enrollment.id,
+        )
         return False
     message = await session.get(EmailMessage, enrollment.last_message_id)
     if message is None:
+        logger.warning(
+            "Condition node %s: last_message_id %s not found -> False",
+            node.get("id"), enrollment.last_message_id,
+        )
         return False
 
-    from app.services import ses_sync
-
     if kind in ("opened_previous", "not_opened_previous"):
-        if message.first_opened_at is None and not getattr(message, "is_bot_suspected", False):
-            await ses_sync.check_ses_message_open(session, message)
-        is_opened = message.first_opened_at is not None and not getattr(message, "is_bot_suspected", False)
+        # opened = human confirmed open (not a bot pre-scan)
+        is_opened = (
+            message.first_opened_at is not None
+            and not getattr(message, "is_bot_suspected", False)
+        )
+        logger.debug(
+            "Condition %s for message %s (contact %s): first_opened_at=%s, is_bot=%s -> is_opened=%s",
+            kind, message.id, contact.email,
+            message.first_opened_at, getattr(message, "is_bot_suspected", False), is_opened,
+        )
         if kind == "opened_previous":
             return is_opened
-        if kind == "not_opened_previous":
-            return not is_opened
+        return not is_opened  # not_opened_previous
 
     if kind in ("clicked_previous", "not_clicked_previous"):
-        if message.first_clicked_at is None:
-            await ses_sync.check_ses_message_click(session, message)
         is_clicked = message.first_clicked_at is not None
+        logger.debug(
+            "Condition %s for message %s (contact %s): first_clicked_at=%s -> is_clicked=%s",
+            kind, message.id, contact.email, message.first_clicked_at, is_clicked,
+        )
         if kind == "clicked_previous":
             return is_clicked
-        if kind == "not_clicked_previous":
-            return not is_clicked
+        return not is_clicked  # not_clicked_previous
 
+    logger.warning("Unknown condition type '%s' on node %s -> False", kind, node.get("id"))
     return False
 
 
@@ -663,7 +688,15 @@ async def advance(session: AsyncSession, enrollment: AutomationEnrollment) -> No
                 enrollment.current_node_id = node_id
                 continue
             _remember(enrollment, delayDone=node["id"])
-            enrollment.next_run_at = utcnow() + dt.timedelta(seconds=delay_seconds(node))
+            # Anchor the delay to the previous email's sent_at so timing is
+            # consistent across all subscribers regardless of when the scheduler
+            # happens to process each individual enrollment row.
+            anchor = utcnow()
+            if enrollment.last_message_id:
+                last_msg = await session.get(EmailMessage, enrollment.last_message_id)
+                if last_msg and last_msg.sent_at:
+                    anchor = last_msg.sent_at
+            enrollment.next_run_at = anchor + dt.timedelta(seconds=delay_seconds(node))
             await _log(session, enrollment, node["id"], "delayed", f"Wait until {enrollment.next_run_at.isoformat()}")
             return
         if kind == NodeKind.EMAIL.value:
@@ -903,6 +936,9 @@ async def get_execution_flow(session: AsyncSession, automation_id: str) -> dict[
             "last_result": None,
             "next_run_at": None,
             "condition_outcome": None,
+            # Per-branch subscriber counts for condition nodes (100+ subscriber visualization)
+            "true_count": 0,
+            "false_count": 0,
         }
         for nid in node_ids
     }
@@ -915,7 +951,12 @@ async def get_execution_flow(session: AsyncSession, automation_id: str) -> dict[
             state["last_action"] = st.action
             state["last_result"] = st.result
             if st.action == "condition":
+                # Track the most recent outcome AND accumulate per-branch subscriber counts
                 state["condition_outcome"] = "true" if st.result == "true" else "false"
+                if st.result == "true":
+                    state["true_count"] += 1
+                else:
+                    state["false_count"] += 1
 
     active_count = 0
     completed_count = 0

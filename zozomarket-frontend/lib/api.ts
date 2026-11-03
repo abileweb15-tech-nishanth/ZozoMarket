@@ -192,6 +192,10 @@ export type NodeExecutionState = {
   lastResult?: string | null
   nextRunAt?: string | null
   conditionOutcome?: 'true' | 'false' | null
+  /** How many subscribers went down the Yes (true) branch */
+  trueCount: number
+  /** How many subscribers went down the No (false) branch */
+  falseCount: number
 }
 
 export type ExecutionFlow = {

@@ -187,7 +187,13 @@ async def check_ses_message_click(session: AsyncSession, message_or_id: EmailMes
 
 
 async def sync_automation_ses(session: AsyncSession, automation_id: str) -> dict[str, Any]:
-    """Scan recent messages for an automation and sync open/click status from AWS SES."""
+    """Scan recent messages for an automation and sync open/click status from AWS SES.
+
+    DEPRECATED for condition evaluation: this function uses aggregate CloudWatch
+    metrics, which are workspace-wide and would incorrectly mark all recipients as
+    opened. Use sqs_event_service.poll_and_process_sqs() for per-recipient tracking.
+    Kept for the manual 'Sync AWS SES' button as a best-effort fallback.
+    """
     messages = (
         await session.scalars(
             select(EmailMessage)
@@ -226,6 +232,42 @@ async def sync_automation_ses(session: AsyncSession, automation_id: str) -> dict
         )
 
     await session.commit()
+    return {
+        "checked": len(messages),
+        "opened_count": opened_count,
+        "clicked_count": clicked_count,
+        "results": results,
+    }
+
+
+async def summarise_automation_messages(session: AsyncSession, automation_id: str) -> dict[str, Any]:
+    """Return a per-recipient open/click summary for an automation without calling
+    CloudWatch. Reads directly from the email_messages table which has already been
+    updated by the SQS worker with accurate per-recipient open/click timestamps.
+    """
+    messages = (
+        await session.scalars(
+            select(EmailMessage)
+            .where(EmailMessage.automation_id == automation_id)
+            .order_by(EmailMessage.created_at.desc())
+            .limit(50)
+        )
+    ).all()
+
+    opened_count = sum(1 for m in messages if m.first_opened_at is not None and not getattr(m, "is_bot_suspected", False))
+    clicked_count = sum(1 for m in messages if m.first_clicked_at is not None)
+    results = [
+        {
+            "message_id": msg.id,
+            "to_email": msg.to_email,
+            "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+            "first_opened_at": msg.first_opened_at.isoformat() if msg.first_opened_at else None,
+            "open_count": msg.open_count,
+            "is_opened": msg.first_opened_at is not None and not getattr(msg, "is_bot_suspected", False),
+            "newly_detected": False,
+        }
+        for msg in messages
+    ]
     return {
         "checked": len(messages),
         "opened_count": opened_count,

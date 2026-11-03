@@ -34,3 +34,4 @@ def downgrade() -> None:
     op.drop_column("email_messages", "last_opened_at")
     op.drop_column("email_messages", "last_bot_scan_at")
     op.drop_column("email_messages", "bot_scan_at")
+

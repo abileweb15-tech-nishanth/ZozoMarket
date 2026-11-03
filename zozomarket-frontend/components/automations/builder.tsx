@@ -519,7 +519,13 @@ function Branch({ tree, ctx, selected, problems, graph, moving, flow, onSelect, 
                         : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
                     )}
                   >
-                    {handle === 'true' ? 'Yes' : 'No'} {isTaken && '✓'}
+                    {handle === 'true' ? 'Yes' : 'No'}
+                    {typeof conditionState?.trueCount === 'number' && (conditionState.trueCount + conditionState.falseCount) > 0 && (
+                      <span className="ml-1 text-[10px] opacity-80">
+                        ({handle === 'true' ? conditionState.trueCount : conditionState.falseCount})
+                      </span>
+                    )}
+                    {isTaken && ' ✓'}
                   </span>
                   <Line active={isTaken} />
                   {plus(handle)}
@@ -603,7 +609,7 @@ function StepCard({
         <span className="block truncate text-xs text-muted-foreground">{text}</span>
         {flowState?.conditionOutcome && (
           <span className={cn('mt-0.5 block text-[11px] font-bold', flowState.conditionOutcome === 'true' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-            Outcome: {flowState.conditionOutcome === 'true' ? 'Yes (Opened)' : 'No (Not opened)'}
+            Outcome: {flowState.conditionOutcome === 'true' ? 'Yes ✓' : 'No ✗'}
           </span>
         )}
         {isCurrent && flowState?.nextRunAt && (
@@ -762,7 +768,7 @@ function StepSettings({ automationId, node, triggerType, triggerConfig, template
               {CONDITION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </Field>
-          {config.type === 'has_tag' && (
+          {(config.type === 'has_tag' || config.type === 'not_has_tag') && (
             <Field label="Tag">
               <Input value={String(config.tag ?? '')} onChange={(event) => set('tag', event.target.value)} />
             </Field>

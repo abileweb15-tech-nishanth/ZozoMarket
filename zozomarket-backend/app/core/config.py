@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     # In "inline" mode the API process polls for due campaigns/automation steps.
     SCHEDULER_ENABLED: bool = True
-    SCHEDULER_INTERVAL_SECONDS: int = 30
+    SCHEDULER_INTERVAL_SECONDS: int = 5
     SEND_BATCH_SIZE: int = 200
 
     # --- Email delivery ---
