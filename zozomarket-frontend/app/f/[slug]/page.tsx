@@ -34,7 +34,21 @@ export default function PublicFormPage() {
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Please enter a valid email.')
     if (!data.get('consent')) return setError('Please agree to receive emails.')
     const fields: Record<string, string> = {}
-    ;(form.fields ?? []).forEach((field) => { fields[field.name] = String(data.get(field.name) || '') })
+    ;(form.fields ?? []).forEach((field) => {
+      if (field.type === 'checkbox') {
+        fields[field.name] = data.get(field.name) ? 'true' : 'false'
+      } else {
+        fields[field.name] = String(data.get(field.name) || '').trim()
+      }
+    })
+    for (const field of form.fields ?? []) {
+      if (field.required) {
+        const val = fields[field.name]
+        if (!val || (field.type === 'checkbox' && val !== 'true')) {
+          return setError(`Please fill in "${field.label}".`)
+        }
+      }
+    }
     setError('')
     api.forms.submit(slug, { name, email, consent: true, fields }).then((result) => {
       setMessage(result.message)
@@ -69,8 +83,34 @@ export default function PublicFormPage() {
           <div className="flex flex-col gap-1.5"><Label htmlFor="email">Email</Label><Input id="email" name="email" type="email" /></div>
           {(form.fields ?? []).map((field) => (
             <div key={field.name} className="flex flex-col gap-1.5">
-              <Label htmlFor={field.name}>{field.label}</Label>
-              <Input id={field.name} name={field.name} type={field.type === 'email' || field.type === 'tel' || field.type === 'number' ? field.type : 'text'} />
+              <Label htmlFor={field.name}>{field.label}{field.required && <span className="ml-1 text-destructive">*</span>}</Label>
+              {field.type === 'textarea' ? (
+                <textarea
+                  id={field.name}
+                  name={field.name}
+                  required={field.required}
+                  rows={3}
+                  className="rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              ) : field.type === 'checkbox' ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    id={field.name}
+                    name={field.name}
+                    required={field.required}
+                    className="size-4 rounded border-input accent-[var(--primary)]"
+                  />
+                  <span>{field.label}</span>
+                </label>
+              ) : (
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  type={field.type === 'email' || field.type === 'tel' || field.type === 'number' ? field.type : 'text'}
+                  required={field.required}
+                />
+              )}
             </div>
           ))}
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="consent" className="mt-0.5 size-4 accent-[var(--primary)]" /> I agree to receive marketing emails. Unsubscribe anytime.</label>

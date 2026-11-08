@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Absolute public URL of this API; used to build tracking, unsubscribe and media links.
     PUBLIC_BASE_URL: str = Field(
         default="http://localhost:8000",
-        validation_alias=AliasChoices("PUBLIC_BASE_URL", "API_URL", "BACKEND_URL", "REQUEST_URL"),
+        validation_alias=AliasChoices("PUBLIC_BASE_URL", "BACKEND_URL", "REQUEST_URL"),
     )
     # URL of the frontend application making requests to this API.
     FRONTEND_URL: str = Field(

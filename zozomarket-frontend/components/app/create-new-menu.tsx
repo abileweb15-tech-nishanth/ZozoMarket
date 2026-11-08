@@ -6,14 +6,24 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-export function CreateNewMenu({ fullWidth }: { fullWidth?: boolean }) {
+export function CreateNewMenu({ fullWidth, compact }: { fullWidth?: boolean; compact?: boolean }) {
   const router = useRouter()
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button className={cn(fullWidth && 'w-full h-10')} />}>
-        <Plus aria-hidden /> Create New
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size={compact ? 'icon' : 'default'}
+            className={cn(compact ? 'size-9 mx-auto' : fullWidth && 'w-full h-10')}
+            title="Create New"
+            aria-label="Create New"
+          />
+        }
+      >
+        <Plus className="size-4" aria-hidden />
+        {!compact && 'Create New'}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align={compact ? 'center' : 'start'} className="w-56">
         <DropdownMenuItem onClick={() => router.push('/email/builder')}>
           <Mail aria-hidden /> Create Campaign
         </DropdownMenuItem>

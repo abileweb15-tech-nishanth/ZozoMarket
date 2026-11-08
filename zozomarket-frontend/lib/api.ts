@@ -108,6 +108,45 @@ export type MediaAsset = {
   src: string
 }
 
+export type SesMetrics = {
+  send: number
+  delivery: number
+  open: number
+  click: number
+  bounce: number
+  complaint: number
+  reject: number
+}
+
+export type SesRates = {
+  deliveryRate: number
+  openRate: number
+  clickRate: number
+  bounceRate: number
+  complaintRate: number
+}
+
+export type SesCampaignBreakdown = {
+  campaign: string
+  sent: number
+  delivered: number
+  opened: number
+  clicked: number
+  bounced: number
+  complaint: number
+  openRate: number
+}
+
+export type SesAnalyticsResponse = {
+  timeframeHours: number
+  mode: 'single' | 'overall'
+  campaign: string
+  availableCampaigns: string[]
+  metrics: SesMetrics
+  rates: SesRates
+  breakdown: SesCampaignBreakdown[]
+}
+
 export type EmailPerformancePoint = {
   week: string
   delivered: number
@@ -251,6 +290,17 @@ export type PublicForm = {
   description: string
   fields: FormField[]
   doubleOptIn: boolean
+}
+
+export type FormSubmission = {
+  id: string
+  formId: string
+  contactId: string | null
+  email: string
+  name: string
+  data: Record<string, any>
+  ipAddress?: string | null
+  createdAt: string
 }
 
 export type WorkspaceSettings = {
@@ -586,6 +636,10 @@ export const api = {
   analytics: {
     getEmailPerformance: (interval: 'day' | 'week' | 'month' = 'week') =>
       request<EmailPerformancePoint[]>(`/analytics/performance?interval=${interval}`),
+    getSesMetrics: (campaign: string = 'all', timeframe: string = '24h') =>
+      request<SesAnalyticsResponse>(`/analytics/ses?campaign=${encodeURIComponent(campaign)}&timeframe=${encodeURIComponent(timeframe)}`),
+    getSesCampaigns: () =>
+      request<string[]>('/analytics/ses/campaigns'),
   },
 
   templates: {
@@ -639,6 +693,25 @@ export const api = {
     view: (slug: string) => publicRequest<unknown>(`/public/forms/${slug}/view`, { method: 'POST', body: '{}' }),
     submit: (slug: string, data: { name: string; email: string; consent: boolean; fields?: Record<string, string> }) =>
       publicRequest<{ message: string; redirectUrl: string | null; requiresConfirmation: boolean }>(`/public/forms/${slug}/submit`, { method: 'POST', body: JSON.stringify(data) }),
+    submissions: (formId: string, limit = 100) =>
+      listRequest<FormSubmission>(`/forms/${formId}/submissions?limit=${limit}`),
+    exportCsvUrl: (formId: string) => `${API_BASE}/forms/${formId}/export`,
+    exportCsv: async (formId: string, formName?: string) => {
+      const token = getAccessToken()
+      const response = await fetch(`${API_BASE}/forms/${formId}/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!response.ok) throw new Error('Could not export submissions')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(formName || 'submissions').replace(/[^a-zA-Z0-9_-]/g, '_')}_submissions.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    },
   },
 
   automations: {

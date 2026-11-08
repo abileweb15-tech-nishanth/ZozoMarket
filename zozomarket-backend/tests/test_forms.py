@@ -149,3 +149,50 @@ async def test_update_and_delete_form(client):
     deleted = await client.delete(f"{BASE}/{form['id']}")
     assert deleted.status_code == 200 and deleted.json()["success"] is True
     assert (await client.get(f"{BASE}/{form['id']}")).status_code == 404
+
+
+async def test_form_submissions_and_export(client, anon_client):
+    form = await _live_form(
+        client,
+        fields=[
+            {"name": "company", "label": "Company", "type": "text", "required": False},
+            {"name": "feedback", "label": "Your Feedback", "type": "textarea", "required": False},
+        ],
+    )
+    form_id = form["id"]
+    slug = form["slug"]
+
+    # Submit via public endpoint
+    submit_res = await anon_client.post(
+        f"/api/v1/public/forms/{slug}/submit",
+        json={
+            "email": "user1@example.com",
+            "name": "Alice Developer",
+            "fields": {
+                "company": "Tech Corp",
+                "feedback": "Loving the product so far!",
+            },
+        },
+    )
+    assert submit_res.status_code == 200
+
+    # Query admin submissions endpoint
+    sub_res = await client.get(f"{BASE}/{form_id}/submissions")
+    assert sub_res.status_code == 200
+    data = sub_res.json()["data"]
+    assert len(data) == 1
+    first_sub = data[0]
+    assert first_sub["email"] == "user1@example.com"
+    assert first_sub["name"] == "Alice Developer"
+    assert first_sub["data"]["company"] == "Tech Corp"
+    assert first_sub["data"]["feedback"] == "Loving the product so far!"
+
+    # Test CSV export endpoint
+    export_res = await client.get(f"{BASE}/{form_id}/export")
+    assert export_res.status_code == 200
+    assert "text/csv" in export_res.headers["content-type"]
+    csv_text = export_res.text
+    assert "user1@example.com" in csv_text
+    assert "Alice Developer" in csv_text
+    assert "Tech Corp" in csv_text
+    assert "Loving the product so far!" in csv_text

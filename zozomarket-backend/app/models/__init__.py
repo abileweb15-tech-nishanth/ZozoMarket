@@ -12,7 +12,7 @@ from app.models.automation import (
 )
 from app.models.campaign import Campaign, CampaignStatus, CampaignType
 from app.models.contact import Contact, SubscriptionStatus, Tag, contact_tags
-from app.models.form import Form, FormKind, FormStatus
+from app.models.form import Form, FormKind, FormStatus, FormSubmissionRecord
 from app.models.media import MediaAsset, MediaType
 from app.models.message import EmailMessage, EmailStatDaily, MessageStatus
 from app.models.segment import Segment
@@ -34,6 +34,7 @@ __all__ = [
     "Form",
     "FormKind",
     "FormStatus",
+    "FormSubmissionRecord",
     "MediaAsset",
     "MediaType",
     "MessageStatus",

@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { Check, Eye, EyeOff, Megaphone } from 'lucide-react'
+import { Check, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { LogoWithText } from '@/components/app/logo'
 
 const points = [
   'Send campaigns from one workspace',
@@ -31,11 +32,8 @@ export function AuthScreen({
   return (
     <main className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(26rem,36rem)]">
       <section className="hidden flex-col justify-between bg-primary px-12 py-12 text-primary-foreground lg:flex">
-        <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary-foreground text-primary" aria-hidden>
-            <Megaphone className="size-4" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">ZozoMarket</span>
+        <div className="flex items-center gap-3 rounded-xl bg-card/90 px-3 py-2 shadow-xs backdrop-blur w-fit">
+          <LogoWithText priority />
         </div>
         <div className="max-w-md">
           <h2 className="text-3xl font-semibold tracking-tight">Your email marketing workspace.</h2>
@@ -54,10 +52,7 @@ export function AuthScreen({
       <section className="flex items-start justify-center overflow-y-auto bg-muted/60 px-4 py-10 lg:items-center">
         <div className={wide ? 'w-full max-w-lg' : 'w-full max-w-md'}>
           <div className="mb-6 flex items-center gap-2 lg:hidden">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground" aria-hidden>
-              <Megaphone className="size-4" />
-            </span>
-            <span className="font-semibold tracking-tight">ZozoMarket</span>
+            <LogoWithText priority />
           </div>
           <div className="rounded-xl border border-border bg-background p-6 shadow-sm sm:p-8">
             <h1 className="text-xl font-semibold tracking-tight">{title}</h1>

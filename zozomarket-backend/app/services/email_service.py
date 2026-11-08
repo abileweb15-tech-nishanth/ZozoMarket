@@ -30,6 +30,7 @@ class OutboundEmail:
     from_name: str | None = field(default_factory=lambda: settings.EMAIL_FROM_NAME)
     reply_to: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -77,6 +78,7 @@ class SesSender:
             from_name=email.from_name,
             reply_to=email.reply_to,
             headers=email.headers,
+            tags=email.tags,
         )
         if not result.ok:
             raise EmailDeliveryError(result.error, permanent=result.permanent)

@@ -12,7 +12,8 @@ from app.schemas.campaign import (
     TestSendRequest,
 )
 from app.schemas.common import AffectedCount, ApiResponse, ListResponse, SuccessResponse
-from app.services import campaign_service, contact_service
+from app.schemas.ses_analytics import SesAnalyticsResponse
+from app.services import campaign_service, contact_service, ses_analytics_service
 from app.workers.jobs import enqueue_campaign_dispatch
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
@@ -30,6 +31,16 @@ async def list_campaigns(
         db, q=q, status=status_, type_=type_, offset=page.offset, limit=page.limit
     )
     return page.response([CampaignRead.from_model(c) for c in items], total)
+
+
+@router.get("/metrics", response_model=ApiResponse[SesAnalyticsResponse])
+async def campaign_metrics(
+    campaign: str = Query(default="all", description="Campaign name or 'all'"),
+    timeframe: str = Query(default="24h", description="Timeframe e.g. 24h, 7d, 30d, or hours"),
+):
+    """Retrieve campaign CloudWatch SES metrics and rates."""
+    data = await ses_analytics_service.get_ses_analytics(campaign=campaign, timeframe=timeframe)
+    return ApiResponse(data=data)
 
 
 @router.get("/stats", response_model=ApiResponse[dict[str, int]])

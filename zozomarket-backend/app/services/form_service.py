@@ -1,6 +1,8 @@
 """Lead capture forms & landing pages, including public submission and double opt-in."""
 
+import csv
 import html as html_lib
+import io
 import json
 import re
 import secrets
@@ -16,7 +18,7 @@ from app.core.security import sign_token, verify_token
 from app.models.automation import TriggerType
 from app.models.base import utcnow
 from app.models.contact import Contact, SubscriptionStatus
-from app.models.form import Form, FormKind, FormStatus
+from app.models.form import Form, FormKind, FormStatus, FormSubmissionRecord
 from app.schemas.form import FormCreate, FormSubmission, FormUpdate
 from app.services import automation_service, contact_service, email_service
 from app.services.query import ilike, paginate
@@ -121,6 +123,58 @@ async def delete_form(session: AsyncSession, form_id: str) -> None:
     await session.commit()
 
 
+async def list_submissions(
+    session: AsyncSession,
+    form_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[FormSubmissionRecord], int]:
+    await get_form(session, form_id)
+    stmt = (
+        select(FormSubmissionRecord)
+        .where(FormSubmissionRecord.form_id == form_id)
+        .order_by(FormSubmissionRecord.created_at.desc())
+    )
+    return await paginate(session, stmt, offset=offset, limit=limit)
+
+
+def _csv_safe(value: object) -> str:
+    s = "" if value is None else str(value)
+    return f"'{s}" if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
+
+
+async def generate_submissions_csv(session: AsyncSession, form_id: str) -> str:
+    form = await get_form(session, form_id)
+    stmt = (
+        select(FormSubmissionRecord)
+        .where(FormSubmissionRecord.form_id == form_id)
+        .order_by(FormSubmissionRecord.created_at.desc())
+    )
+    result = await session.scalars(stmt)
+    submissions = list(result.all())
+
+    output = io.StringIO()
+    field_names = [f["name"] for f in form.fields or []]
+    field_labels = [f.get("label", f["name"]) for f in form.fields or []]
+    headers = ["Submission Date", "Email", "Name"] + field_labels
+
+    writer = csv.writer(output)
+    writer.writerow(headers)
+
+    for sub in submissions:
+        row = [
+            sub.created_at.strftime("%Y-%m-%d %H:%M:%S") if sub.created_at else "",
+            _csv_safe(sub.email),
+            _csv_safe(sub.name),
+        ]
+        for f_name in field_names:
+            row.append(_csv_safe(sub.data.get(f_name, "")))
+        writer.writerow(row)
+
+    return output.getvalue()
+
+
 # --- Public ------------------------------------------------------------------------------
 
 
@@ -204,6 +258,17 @@ async def _submit_scoped(session: AsyncSession, form: Form, data: FormSubmission
                 contact.unsubscribed_at = None
                 newly_subscribed = True
     await session.flush()
+
+    submission_record = FormSubmissionRecord(
+        form_id=form.id,
+        contact_id=contact.id if contact else None,
+        email=contact_service.normalize_email(data.email),
+        name=data.name,
+        data=attributes,
+        workspace_id=form.workspace_id,
+    )
+    session.add(submission_record)
+
     await session.execute(
         update(Form).where(Form.id == form.id).values(submissions=Form.submissions + 1)
     )
@@ -269,11 +334,17 @@ _LANDING_PAGE = Template((Path(__file__).parent / "landing_page.html").read_text
 
 def render_landing_page(form: Form, submit_url: str) -> str:
     esc = html_lib.escape
-    extra = "".join(
-        f'<label>{esc(f["label"])}<input name="{esc(f["name"])}" '
-        f'type="{esc(f.get("type", "text"))}"{" required" if f.get("required") else ""}></label>'
-        for f in form.fields or []
-    )
+    field_htmls = []
+    for f in form.fields or []:
+        fname = esc(f["name"])
+        flabel = esc(f.get("label", f["name"]))
+        ftype = esc(f.get("type", "text"))
+        req_attr = " required" if f.get("required") else ""
+        if ftype == "textarea":
+            field_htmls.append(f'<label>{flabel}<textarea name="{fname}"{req_attr}></textarea></label>')
+        else:
+            field_htmls.append(f'<label>{flabel}<input name="{fname}" type="{ftype}"{req_attr}></label>')
+    extra = "".join(field_htmls)
     return _LANDING_PAGE.substitute(
         title=esc(form.title or form.name),
         description=esc(form.description),

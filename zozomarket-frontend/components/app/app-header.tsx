@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { ChevronRight, CircleHelp, Menu } from 'lucide-react'
+import { ChevronRight, CircleHelp, Menu, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,13 +14,14 @@ import { findNav } from '@/lib/nav'
 import { clearSession, loadUser, type SessionUser } from '@/lib/session'
 import { AppSidebar } from './app-sidebar'
 import { ThemeToggle } from './theme-toggle'
+import { useSidebar } from './sidebar-provider'
 
 export function AppHeader() {
   const pathname = usePathname()
   const router = useRouter()
   const nav = findNav(pathname)
   const [user, setUser] = useState<SessionUser | null>(null)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const { isOpen, toggle, mobileOpen, setMobileOpen } = useSidebar()
 
   useEffect(() => {
     const read = () => setUser(loadUser())
@@ -33,6 +34,7 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur md:px-8">
+      {/* Mobile drawer trigger */}
       <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
         <Menu />
       </Button>
@@ -42,6 +44,19 @@ export function AppHeader() {
           <AppSidebar onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
+
+      {/* Desktop sidebar toggle button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        type="button"
+        className="hidden size-9 text-muted-foreground hover:text-foreground lg:flex cursor-pointer"
+        aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        onClick={toggle}
+      >
+        {isOpen ? <PanelLeftClose className="size-5" /> : <PanelLeft className="size-5" />}
+      </Button>
 
       <nav aria-label="Breadcrumb" className="min-w-0">
         <ol className="flex items-center gap-1.5 text-sm">

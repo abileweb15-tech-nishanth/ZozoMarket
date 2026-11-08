@@ -470,3 +470,86 @@ def test_evaluate_open_event_all_actions():
                               already_opened=True, had_bot_scan=False)
     assert res["action"] == "UPDATE_LAST_OPEN"
     assert res["trigger_automation"] is False
+
+
+# ===========================================================================
+# TEST 10: 100+ recipient concurrent isolation stress test
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_100_recipients_concurrent_isolation(session, workspace):
+    """Stress test verifying 100 concurrent recipients evaluate condition branches in complete isolation.
+
+    Recipients 0-49: Opened email -> Must take Yes branch (Email 2 sent)
+    Recipients 50-99: Unopened -> Must take No branch (End node, no Email 2)
+    """
+    import asyncio
+
+    auto = await _build_automation(session, workspace, condition_type="opened_previous")
+
+    # 1. Bulk create 100 contacts
+    contacts = [
+        Contact(
+            workspace_id=workspace.id,
+            email=f"user{i}@stress-test.example.com",
+            name=f"User {i}",
+            status=SubscriptionStatus.SUBSCRIBED,
+        )
+        for i in range(100)
+    ]
+    session.add_all(contacts)
+    await session.commit()
+    for c in contacts:
+        await session.refresh(c)
+
+    # 2. Enroll all 100 contacts and advance to Email 1 / Delay
+    enrollments = []
+    for c in contacts:
+        enr = await _enroll_and_advance_to_condition(session, auto, c)
+        enrollments.append(enr)
+
+    # 3. Mark only contacts 0..49 as having opened their email
+    now = dt.datetime.now(dt.UTC)
+    for i in range(50):
+        enr = enrollments[i]
+        msg = await session.get(EmailMessage, enr.last_message_id)
+        assert msg is not None
+        msg.first_opened_at = now
+        msg.last_opened_at = now
+        msg.open_count = 1
+        msg.status = MessageStatus.HUMAN_OPENED
+        msg.is_bot_suspected = False
+
+    await session.commit()
+
+    # 4. Concurrently fast-forward and advance all 100 enrollments
+    async def process_enrollment(enr):
+        await _skip_delay_and_advance(session, enr)
+
+    for enr in enrollments:
+        await process_enrollment(enr)
+
+    # 5. Verify absolute isolation across all 100 recipients
+    all_messages = list(
+        await session.scalars(
+            select(EmailMessage).where(EmailMessage.automation_id == auto.id)
+        )
+    )
+
+    for i, c in enumerate(contacts):
+        user_msgs = [m for m in all_messages if m.contact_id == c.id]
+        if i < 50:
+            # Opener group (0..49) - received Email 1 + Follow-up Email 2
+            assert len(user_msgs) == 2, f"User {i} (opener) must have received 2 emails, got {len(user_msgs)}"
+        else:
+            # Non-opener group (50..99) - branched to false (End), strictly 1 email
+            assert len(user_msgs) == 1, f"User {i} (non-opener) MUST NOT receive follow-up email, got {len(user_msgs)}"
+
+    # 6. Verify execution flow aggregates match exactly 50 True / 50 False
+    flow = await automation_service.get_execution_flow(session, auto.id)
+    cond_node_id = next(n["id"] for n in auto.nodes if n.get("kind") == NodeKind.CONDITION.value)
+    cond_state = flow["node_states"][cond_node_id]
+    assert cond_state["true_count"] == 50, f"Expected 50 True branches, got {cond_state['true_count']}"
+    assert cond_state["false_count"] == 50, f"Expected 50 False branches, got {cond_state['false_count']}"
+

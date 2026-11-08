@@ -127,3 +127,14 @@ class FormSubmissionResult(CamelModel):
     message: str
     redirect_url: str | None
     requires_confirmation: bool
+
+
+class FormSubmissionRead(CamelModel):
+    id: str
+    form_id: str
+    contact_id: str | None = None
+    email: str
+    name: str
+    data: dict[str, Any]
+    ip_address: str | None = None
+    created_at: datetime

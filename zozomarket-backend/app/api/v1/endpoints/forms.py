@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.api.deps import DbSession, PageParams
 from app.models.form import FormKind, FormStatus
@@ -8,6 +8,7 @@ from app.schemas.form import (
     FormCreate,
     FormRead,
     FormSubmission,
+    FormSubmissionRead,
     FormSubmissionResult,
     FormUpdate,
     PublicFormConfig,
@@ -57,6 +58,24 @@ async def update_form(db: DbSession, form_id: str, body: FormUpdate):
 async def delete_form(db: DbSession, form_id: str):
     await form_service.delete_form(db, form_id)
     return SuccessResponse()
+
+
+@router.get("/{form_id}/submissions", response_model=ListResponse[FormSubmissionRead])
+async def list_form_submissions(db: DbSession, form_id: str, page: PageParams):
+    items, total = await form_service.list_submissions(
+        db, form_id, offset=page.offset, limit=page.limit
+    )
+    return page.response([FormSubmissionRead.model_validate(s) for s in items], total)
+
+
+@router.get("/{form_id}/export")
+async def export_form_submissions(db: DbSession, form_id: str):
+    csv_content = await form_service.generate_submissions_csv(db, form_id)
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="form_{form_id}_submissions.csv"'},
+    )
 
 
 # --- Public ------------------------------------------------------------------------

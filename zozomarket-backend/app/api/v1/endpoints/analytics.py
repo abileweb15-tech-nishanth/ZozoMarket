@@ -13,7 +13,8 @@ from app.schemas.analytics import (
     PerformancePoint,
 )
 from app.schemas.common import ApiResponse
-from app.services import analytics_service, campaign_service
+from app.schemas.ses_analytics import SesAnalyticsResponse
+from app.services import analytics_service, campaign_service, ses_analytics_service
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -95,3 +96,21 @@ async def deliverability(db: DbSession, start: dt.date | None = None, end: dt.da
     return ApiResponse(
         data=Deliverability(**await analytics_service.deliverability(db, start, end))
     )
+
+
+@router.get("/ses", response_model=ApiResponse[SesAnalyticsResponse])
+async def ses_metrics(
+    campaign: str = Query(default="all", description="Campaign name or 'all' for aggregate"),
+    timeframe: str = Query(default="24h", description="Timeframe e.g. 24h, 7d, 30d, or hours"),
+):
+    """Retrieve campaign-level and aggregate AWS SES CloudWatch metrics and rates."""
+    data = await ses_analytics_service.get_ses_analytics(campaign=campaign, timeframe=timeframe)
+    return ApiResponse(data=data)
+
+
+@router.get("/ses/campaigns", response_model=ApiResponse[list[str]])
+async def list_ses_campaigns():
+    """List active campaign names discovered in AWS CloudWatch."""
+    campaigns = await ses_analytics_service.get_active_campaigns()
+    return ApiResponse(data=campaigns)
+

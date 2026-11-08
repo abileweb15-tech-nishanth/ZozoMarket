@@ -65,6 +65,7 @@ def _send_sync(
     from_name: str | None,
     reply_to: str | None,
     headers: dict[str, str] | None,
+    tags: dict[str, str] | None = None,
 ) -> SesSendResult:
     access_key = (settings.AWS_ACCESS_KEY_ID or "").strip()
     secret_key = _secret(settings.AWS_SECRET_ACCESS_KEY)
@@ -96,11 +97,28 @@ def _send_sync(
     configuration_set = (settings.SES_CONFIGURATION_SET or "").strip()
     if configuration_set:
         request["ConfigurationSetName"] = configuration_set
-    # The configuration set publishes this tag to CloudWatch as its dimension.
-    dimension = (settings.SES_CLOUDWATCH_DIMENSION_NAME or "").strip()
-    dimension_value = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
-    if dimension and dimension_value:
-        request["EmailTags"] = [{"Name": dimension, "Value": dimension_value}]
+    # Email tags for CloudWatch dimension matching
+    email_tags: list[dict[str, str]] = []
+    has_campaign_tag = False
+    if tags:
+        for k, v in tags.items():
+            if not v:
+                continue
+            clean_k = str(k).strip()
+            clean_v = str(v).strip()
+            if clean_k.lower() == "campaign":
+                has_campaign_tag = True
+            email_tags.append({"Name": clean_k, "Value": clean_v})
+
+    # Fallback to configured dimension if no campaign tag provided
+    if not has_campaign_tag:
+        dimension = (settings.SES_CLOUDWATCH_DIMENSION_NAME or "").strip()
+        dimension_value = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
+        if dimension and dimension_value:
+            email_tags.append({"Name": dimension, "Value": dimension_value})
+
+    if email_tags:
+        request["EmailTags"] = email_tags
 
     try:
         # boto3 reads the keys we pass here. It does not look for a hardcoded profile.
@@ -134,6 +152,7 @@ async def send_email(
     from_name: str | None = None,
     reply_to: str | None = None,
     headers: dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
 ) -> SesSendResult:
     """Send one HTML and plain-text message. Failures are logged and returned, not raised."""
     # boto3 is synchronous. The thread keeps the API event loop free while SES responds.
@@ -146,4 +165,5 @@ async def send_email(
         from_name=from_name,
         reply_to=reply_to,
         headers=headers,
+        tags=tags,
     )

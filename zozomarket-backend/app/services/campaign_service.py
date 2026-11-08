@@ -11,6 +11,7 @@ can ever own a dispatch. Dispatch itself is idempotent: one `EmailMessage` per
 import asyncio
 import datetime as dt
 import logging
+import re
 from collections.abc import Sequence
 
 from sqlalchemy import func, select, update
@@ -300,6 +301,16 @@ async def claim_due(session: AsyncSession, *, limit: int = 20) -> list[str]:
 # --- Dispatch -------------------------------------------------------------------------------
 
 
+def campaign_tag_value(campaign: Campaign) -> str:
+    """Generate a clean tag identifier for AWS SES tracking.
+    Uses campaign name as a sanitized slug or falls back to campaign id.
+    """
+    raw_name = (campaign.name or "").strip()
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", raw_name.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:100] if slug else f"campaign_{campaign.id}"
+
+
 def outbound_html(campaign: Campaign, workspace: Workspace | None) -> str:
     design = brand_blocks(campaign.design or [], workspace)
     if design:
@@ -325,6 +336,7 @@ async def _send_one(
         message_id=message_id,
     )
     from_name, from_email, reply_to = identity
+    tag = campaign_tag_value(campaign)
     email = email_service.OutboundEmail(
         to=contact.email,
         subject=subject,
@@ -333,6 +345,7 @@ async def _send_one(
         reply_to=reply_to,
         from_email=from_email,
         from_name=from_name,
+        tags={"campaign": tag},
     )
     async with sem:
         try:
@@ -473,6 +486,7 @@ async def send_test(session: AsyncSession, campaign_id: str, emails: Sequence[st
     subject = "[Test] " + render_merge_tags(campaign.subject, variables, escape=False)
     for to in emails:
         try:
+            tag = f"test_{campaign_tag_value(campaign)}"[:256]
             await email_service.send_email(
                 email_service.OutboundEmail(
                     to=str(to),
@@ -481,6 +495,7 @@ async def send_test(session: AsyncSession, campaign_id: str, emails: Sequence[st
                     reply_to=reply_to,
                     from_email=from_email,
                     from_name=from_name,
+                    tags={"campaign": tag},
                 )
             )
         except email_service.EmailDeliveryError as exc:

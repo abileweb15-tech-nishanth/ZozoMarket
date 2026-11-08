@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -48,3 +48,19 @@ class Form(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     @property
     def conversion_rate(self) -> float | None:
         return round(self.submissions * 100 / self.views, 1) if self.views else None
+
+
+class FormSubmissionRecord(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
+    __tablename__ = "form_submissions"
+
+    form_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("forms.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(45))
+    user_agent: Mapped[str | None] = mapped_column(String(500))
