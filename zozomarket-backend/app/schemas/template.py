@@ -87,6 +87,7 @@ class RenderRequest(InputModel):
     design: list[BuilderBlock] = Field(min_length=1, max_length=500)
     preheader: str = Field(default="", max_length=300)
     variables: dict[str, str] | None = None
+    substitute_tags: bool = True
 
 
 class RenderedEmail(CamelModel):

@@ -32,7 +32,7 @@ async def _commit_with_retry(session: AsyncSession, max_retries: int = 5) -> Non
 
 from app.core.config import settings
 from app.core.exceptions import AppError, ExternalServiceError, InvalidStateError, NotFoundError
-from app.models.account import Workspace
+from app.models.account import User, Workspace
 from app.models.base import utcnow
 from app.models.campaign import EDITABLE_STATUSES, Campaign, CampaignStatus, CampaignType
 from app.models.contact import Contact
@@ -44,6 +44,7 @@ from app.services.query import ilike, paginate
 from app.services.template_service import (
     SAMPLE_VARIABLES,
     brand_blocks,
+    contact_variables,
     ensure_preheader,
     render_blocks,
     render_merge_tags,
@@ -476,15 +477,49 @@ async def sending_identity(session: AsyncSession, campaign: Campaign) -> tuple[s
     return from_name or settings.EMAIL_FROM_NAME, from_email or settings.EMAIL_FROM_ADDRESS, reply_to
 
 
+async def _resolve_test_variables(
+    session: AsyncSession, workspace_id: str, to_email: str
+) -> dict[str, str]:
+    """Use real Contact or User details if the test recipient matches a known person."""
+    normalized = to_email.strip().lower()
+    contact = await session.scalar(
+        select(Contact).where(
+            Contact.workspace_id == workspace_id,
+            func.lower(Contact.email) == normalized,
+        )
+    )
+    if contact is not None:
+        variables = contact_variables(contact.name, contact.email, contact.attributes)
+        unsub = email_service.unsubscribe_url(contact.id)
+        variables["unsubscribe_url"] = unsub
+        variables["preferences_url"] = unsub
+        return variables
+
+    user = await session.scalar(
+        select(User).where(
+            User.workspace_id == workspace_id,
+            func.lower(User.email) == normalized,
+        )
+    )
+    if user is not None and (user.name or "").strip():
+        variables = contact_variables(user.name, user.email)
+        variables["unsubscribe_url"] = SAMPLE_VARIABLES["unsubscribe_url"]
+        variables["preferences_url"] = SAMPLE_VARIABLES["preferences_url"]
+        return variables
+
+    return dict(SAMPLE_VARIABLES)
+
+
 async def send_test(session: AsyncSession, campaign_id: str, emails: Sequence[str]) -> int:
     campaign = await get_campaign(session, campaign_id)
     _assert_sendable(campaign)
     workspace = await session.get(Workspace, campaign.workspace_id)
     from_name, from_email, reply_to = await sending_identity(session, campaign)
-    variables = dict(SAMPLE_VARIABLES)
-    html = render_merge_tags(outbound_html(campaign, workspace), variables)
-    subject = "[Test] " + render_merge_tags(campaign.subject, variables, escape=False)
+    base_html = outbound_html(campaign, workspace)
     for to in emails:
+        variables = await _resolve_test_variables(session, campaign.workspace_id, str(to))
+        html = render_merge_tags(base_html, variables)
+        subject = "[Test] " + render_merge_tags(campaign.subject, variables, escape=False)
         try:
             tag = f"test_{campaign_tag_value(campaign)}"[:256]
             await email_service.send_email(

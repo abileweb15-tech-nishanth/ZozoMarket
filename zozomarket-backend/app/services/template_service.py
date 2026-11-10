@@ -17,7 +17,7 @@ from app.models.template import EmailTemplate
 from app.schemas.template import TemplateCreate, TemplateUpdate
 from app.services.query import ilike, paginate
 
-MERGE_TAG = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+MERGE_TAG = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}")
 _COLOR = re.compile(r"^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20})$")
 _FONT = re.compile(r"^[A-Za-z0-9 ,\-]{1,64}$")
 _SAFE_URL = re.compile(r"^(https?://|mailto:|/|\{\{)", re.IGNORECASE)
@@ -31,29 +31,100 @@ SAMPLE_VARIABLES: dict[str, str] = {
     "preferences_url": "#preferences",
 }
 
+_TAG_ALIASES: dict[str, str] = {
+    "firstname": "first_name",
+    "first_name": "first_name",
+    "fname": "first_name",
+    "lastname": "last_name",
+    "last_name": "last_name",
+    "lname": "last_name",
+    "fullname": "name",
+    "full_name": "name",
+    "name": "name",
+    "email": "email",
+    "emailaddress": "email",
+    "email_address": "email",
+    "unsubscribeurl": "unsubscribe_url",
+    "unsubscribe_url": "unsubscribe_url",
+    "preferencesurl": "preferences_url",
+    "preferences_url": "preferences_url",
+}
+
 
 # --- Merge tags ----------------------------------------------------------------
 
 
 def render_merge_tags(text: str, variables: Mapping[str, str], *, escape: bool = True) -> str:
+    lower_vars = {str(k).lower(): str(v) for k, v in variables.items()}
+
+    def _resolve(raw_key: str) -> str:
+        if raw_key in variables:
+            return str(variables[raw_key])
+        stripped = raw_key.split(".", 1)[-1]
+        if stripped in variables:
+            return str(variables[stripped])
+        lower = stripped.lower()
+        if lower in lower_vars:
+            return lower_vars[lower]
+        canonical = _TAG_ALIASES.get(lower)
+        if canonical:
+            if canonical in variables:
+                return str(variables[canonical])
+            if canonical in lower_vars:
+                return lower_vars[canonical]
+        return ""
+
     def _sub(match: re.Match[str]) -> str:
-        value = variables.get(match.group(1), "")
+        value = _resolve(match.group(1))
         return html_lib.escape(value, quote=True) if escape else value
 
     return MERGE_TAG.sub(_sub, text)
 
 
 def contact_variables(name: str, email: str, extra: Mapping[str, Any] | None = None) -> dict:
-    first, _, last = (name or "").partition(" ")
-    variables = {
+    normalized_extra: dict[str, str] = {}
+    extra_lower: dict[str, str] = {}
+    for key, value in (extra or {}).items():
+        if isinstance(value, str | int | float) and not isinstance(value, bool):
+            s_val = str(value).strip()
+            if s_val:
+                normalized_extra[str(key)] = s_val
+                extra_lower[str(key).lower().replace("-", "_")] = s_val
+
+    clean_name = (name or "").strip()
+    parsed_first, _, parsed_last = clean_name.partition(" ")
+
+    extra_first = (
+        extra_lower.get("first_name")
+        or extra_lower.get("firstname")
+        or extra_lower.get("fname")
+        or ""
+    )
+    extra_last = (
+        extra_lower.get("last_name")
+        or extra_lower.get("lastname")
+        or extra_lower.get("lname")
+        or ""
+    )
+    extra_full = (
+        extra_lower.get("full_name")
+        or extra_lower.get("fullname")
+        or extra_lower.get("name")
+        or ""
+    )
+
+    first = parsed_first or extra_first
+    last = parsed_last.strip() or extra_last
+    full_name = clean_name or extra_full or f"{first} {last}".strip()
+
+    variables: dict[str, str] = {
         "first_name": first or "there",
         "last_name": last,
-        "name": name or email,
+        "name": full_name or email,
         "email": email,
     }
-    for key, value in (extra or {}).items():
-        if isinstance(value, str | int | float):
-            variables.setdefault(str(key), str(value))
+    for key, value in normalized_extra.items():
+        variables.setdefault(key, value)
     return variables
 
 
@@ -173,7 +244,10 @@ def _block_html(block: Mapping[str, Any]) -> str:
             '<a href="{{unsubscribe_url}}" style="color:#6b7280;text-decoration:underline;">'
             "Unsubscribe</a>"
         )
-        body = text if "unsubscribe_url" in str(block.get("text") or "") else f"{text}<br>{link}"
+        if "unsubscribe_url" in str(block.get("text") or ""):
+            body = re.sub(r"\{\{\s*unsubscribe_url\s*\}\}", link, text)
+        else:
+            body = f"{text}<br>{link}"
         return f'<tr><td style="{cell}">{body}</td></tr>'
     weight = "font-weight:bold;" if kind in ("logo", "banner") else ""
     return f'<tr><td style="{cell}{weight}">{text}</td></tr>'

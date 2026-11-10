@@ -246,3 +246,38 @@ def test_ses_daily_counts_read_cloudwatch(monkeypatch):
 def test_merge_tags_escape_values():
     out = render_merge_tags("Hi {{ first_name }}!{{unknown}}", {"first_name": "<b>Al</b>"})
     assert out == "Hi &lt;b&gt;Al&lt;/b&gt;!"
+
+
+def test_merge_tags_aliases_and_contact_attributes():
+    from app.services.template_service import contact_variables
+
+    vars_from_attrs = contact_variables(
+        "",
+        "priya@example.com",
+        {"first_name": "Priya", "last_name": "Nair", "company": "Acme"},
+    )
+    assert vars_from_attrs["first_name"] == "Priya"
+    assert vars_from_attrs["last_name"] == "Nair"
+    assert vars_from_attrs["name"] == "Priya Nair"
+    assert vars_from_attrs["company"] == "Acme"
+
+    rendered = render_merge_tags(
+        "Hello {{First_Name}} {{lastName}} ({{contact.name}}) from {{Company}} <{{EMAIL}}>",
+        vars_from_attrs,
+    )
+    assert rendered == "Hello Priya Nair (Priya Nair) from Acme <priya@example.com>"
+
+
+async def test_render_endpoint_preserves_tags_when_substitute_tags_false(client):
+    payload = {
+        "design": [{"type": "paragraph", "text": "Hi {{first_name}}, welcome {{name}}!"}],
+        "preheader": "Welcome",
+        "substituteTags": False,
+    }
+    res = await client.post("/api/v1/templates/render", json=payload)
+    assert res.status_code == 200, res.text
+    html = res.json()["data"]["html"]
+    assert "{{first_name}}" in html
+    assert "{{name}}" in html
+    assert "{{unsubscribe_url}}" in html
+    assert "Alex" not in html

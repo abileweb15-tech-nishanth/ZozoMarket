@@ -15,7 +15,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NativeSelect, Segmented } from '@/components/app/shared'
 import { api, type CampaignStatus, type Contact, type EmailBlock, type LeadForm, type MediaAsset } from '@/lib/api'
-import { blankDesign, footerText, makeBlock, MERGE_TAGS, preserveSavedDesign, type Brand } from '@/lib/email-design'
+import { applyMergeTags, applySampleTags, blankDesign, contactVariables, footerText, makeBlock, preserveSavedDesign, type Brand } from '@/lib/email-design'
+import { MergeTagButton } from '@/components/app/merge-tag-button'
 import { cn } from '@/lib/utils'
 
 type BlockType = EmailBlock['type']
@@ -70,28 +71,29 @@ function hexColor(value: string, fallback: string) {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
 }
 
-function BlockView({ block }: { block: EmailBlock }) {
+function BlockView({ block, showSampleTags }: { block: EmailBlock; showSampleTags: boolean }) {
+  const display = (text: string) => showSampleTags ? applySampleTags(text) : text
   const style = { textAlign: block.align, color: block.color, backgroundColor: block.bg, padding: block.padding, fontSize: block.size, fontFamily: block.font } as React.CSSProperties
   switch (block.type) {
     case 'logo':
-      return <div style={style} className="font-bold tracking-tight">{block.image ? <img src={block.image} alt={block.text} style={{ width: block.width ?? 160, maxWidth: '100%', height: 'auto' }} className="inline-block" /> : block.text}</div>
-    case 'heading': return <h2 style={style} className="font-bold leading-tight">{block.text}</h2>
-    case 'paragraph': return <p style={style} className="leading-relaxed">{block.text}</p>
-    case 'image': return <div style={{ textAlign: block.align, backgroundColor: block.bg, padding: block.padding }}><Picture src={block.image} alt={block.text} width={block.width ?? 600} className="inline-block" /></div>
+      return <div style={style} className="font-bold tracking-tight">{block.image ? <img src={block.image} alt={display(block.text)} style={{ width: block.width ?? 160, maxWidth: '100%', height: 'auto' }} className="inline-block" /> : display(block.text)}</div>
+    case 'heading': return <h2 style={style} className="font-bold leading-tight">{display(block.text)}</h2>
+    case 'paragraph': return <p style={style} className="leading-relaxed">{display(block.text)}</p>
+    case 'image': return <div style={{ textAlign: block.align, backgroundColor: block.bg, padding: block.padding }}><Picture src={block.image} alt={display(block.text)} width={block.width ?? 600} className="inline-block" /></div>
     case 'button': {
       const fill = ['#fff', '#ffffff'].includes(block.bg.toLowerCase()) ? '#4f46e5' : block.bg
-      return <div style={{ ...style, backgroundColor: '#ffffff' }}><span className="inline-block rounded-md px-5 py-2.5 font-semibold" style={{ backgroundColor: fill, color: block.color, fontSize: block.size }}>{block.text}</span></div>
+      return <div style={{ ...style, backgroundColor: '#ffffff' }}><span className="inline-block rounded-md px-5 py-2.5 font-semibold" style={{ backgroundColor: fill, color: block.color, fontSize: block.size }}>{display(block.text)}</span></div>
     }
     case 'divider': return <div style={style}><hr style={{ borderColor: block.color }} className="border-t" /></div>
     case 'spacer': return <div style={{ height: block.padding }} aria-hidden />
     case 'columns': {
       const [left, right] = block.text.split('|')
-      return <div style={style} className="grid grid-cols-2 gap-4"><p className="rounded-md bg-muted p-3">{left}</p><p className="rounded-md bg-muted p-3">{right}</p></div>
+      return <div style={style} className="grid grid-cols-2 gap-4"><p className="rounded-md bg-muted p-3">{display(left ?? '')}</p><p className="rounded-md bg-muted p-3">{display(right ?? '')}</p></div>
     }
-    case 'social': return <div style={style}>{block.text}</div>
-    case 'product': return <div style={style} className="flex items-center gap-4 text-left"><Picture src={block.image} alt="" width={block.width ?? 80} className="rounded-md object-cover" /><span className="font-medium">{block.text}</span></div>
-    case 'banner': return <div style={style} className="font-semibold">{block.text}</div>
-    case 'footer': return <div style={style} className="leading-relaxed">{block.text}<br />Unsubscribe</div>
+    case 'social': return <div style={style}>{display(block.text)}</div>
+    case 'product': return <div style={style} className="flex items-center gap-4 text-left"><Picture src={block.image} alt="" width={block.width ?? 80} className="rounded-md object-cover" /><span className="font-medium">{display(block.text)}</span></div>
+    case 'banner': return <div style={style} className="font-semibold">{display(block.text)}</div>
+    case 'footer': return <div style={style} className="leading-relaxed">{display(block.text)}<br />Unsubscribe</div>
   }
 }
 
@@ -131,7 +133,11 @@ function EmailBuilder() {
   const [mode, setMode] = useState<'visual' | 'code'>('visual')
   const [htmlSource, setHtmlSource] = useState('')
   const [customHtml, setCustomHtml] = useState(false)
+  const [showSampleTags, setShowSampleTags] = useState(true)
   const blockHtmlRef = useRef('')
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const subjectRef = useRef<HTMLInputElement | null>(null)
   // These update in the keystroke, before React re-renders, so Visual and save cannot use the blocks.
   const htmlSourceRef = useRef('')
   const htmlIsSourceRef = useRef(false)
@@ -299,7 +305,7 @@ function EmailBuilder() {
     }
     const token = ++renderTokenRef.current
     try {
-      const rendered = await api.templates.render({ design: blocks, preheader })
+      const rendered = await api.templates.render({ design: blocks, preheader, substituteTags: false })
       // A keystroke, or a newer open, happened while the blocks were rendering.
       if (token !== renderTokenRef.current || htmlIsSourceRef.current) return
       blockHtmlRef.current = rendered.html
@@ -378,8 +384,19 @@ function EmailBuilder() {
     move(selected.id, from + (dir > 0 ? 2 : -1))
   }
 
-  const runTest = async (email: string) => {
-    if (!subject.trim()) throw new Error('Add a subject before sending a test')
+  /** Insert a string at the cursor position of an input or textarea (or append to end). */
+  const insertAtCursor = (
+    el: HTMLTextAreaElement | HTMLInputElement | null,
+    value: string,
+    currentText: string,
+  ): string => {
+    if (!el) return currentText + value
+    const start = el.selectionStart ?? currentText.length
+    const end = el.selectionEnd ?? currentText.length
+    return currentText.slice(0, start) + value + currentText.slice(end)
+  }
+
+  const runTest = async (email: string) => {    if (!subject.trim()) throw new Error('Add a subject before sending a test')
     await persist()
     const result = await api.campaigns.test(idRef.current!, [email])
     toast.success(`Test sent to ${result.affected} address`)
@@ -463,16 +480,9 @@ function EmailBuilder() {
   const showPreview = async (contactId: string) => {
     setPreviewContact(contactId)
     const contact = contacts.find((item) => item.id === contactId)
-    const [first, ...rest] = (contact?.name || 'Alex Morgan').split(' ')
-    const variables = {
-      first_name: first,
-      last_name: rest.join(' '),
-      name: contact?.name || 'Alex Morgan',
-      email: contact?.email || 'alex@example.com',
-    }
+    const variables = contactVariables(contact)
     if (mode === 'code' || htmlIsSourceRef.current) {
-      const source = htmlSourceRef.current
-      setPreviewHtml(source.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => variables[key as keyof typeof variables] ?? ''))
+      setPreviewHtml(applyMergeTags(htmlSourceRef.current, variables))
       return
     }
     const rendered = await api.templates.render({ design: blocks, preheader, variables })
@@ -502,7 +512,18 @@ function EmailBuilder() {
             <Button variant={device === 'Desktop' ? 'secondary' : 'ghost'} size="icon-sm" aria-label="Desktop preview" aria-pressed={device === 'Desktop'} onClick={() => setDevice('Desktop')}><Monitor /></Button>
             <Button variant={device === 'Mobile' ? 'secondary' : 'ghost'} size="icon-sm" aria-label="Mobile preview" aria-pressed={device === 'Mobile'} onClick={() => setDevice('Mobile')}><Smartphone /></Button>
           </div>
-          <Button variant="outline" onClick={() => { setDialog('preview'); void showPreview(previewContact) }}>Preview</Button>
+          <button
+            type="button"
+            aria-label={showSampleTags ? 'Showing sample tag values — click to show raw tags' : 'Showing raw tags — click to show sample values'}
+            aria-pressed={showSampleTags}
+            onClick={() => setShowSampleTags((v) => !v)}
+            title={showSampleTags ? 'Canvas shows: Hi Alex (sample) — click to see raw {{first_name}}' : 'Canvas shows: raw {{first_name}} — click to see sample values'}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground hover:border-foreground/40"
+          >
+            <span className={cn('inline-block size-2 rounded-full', showSampleTags ? 'bg-green-500' : 'bg-muted-foreground/40')} aria-hidden />
+            {showSampleTags ? 'Sample tags' : 'Raw tags'}
+          </button>
+          <Button variant="outline" onClick={() => { setDialog('preview'); void showPreview(previewContact || contacts[0]?.id || '') }}>Preview</Button>
           {!templateParam && <Button variant="outline" disabled={readOnly} onClick={() => { setTemplateName(name); setDialog('template') }}>Save as template</Button>}
           {sourceTemplateId && !templateParam && (
             <Button variant="outline" disabled={readOnly} onClick={() => { updateSourceTemplate().catch((err: Error) => toast.error(err.message)) }}>Update template</Button>
@@ -523,7 +544,12 @@ function EmailBuilder() {
         </div>
       </div>
       <div className="grid gap-2 border-b border-border bg-background px-4 py-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="Subject"><Input aria-label="Subject" value={subject} disabled={readOnly} onChange={(event) => setSubject(event.target.value)} /></Field>
+        <Field label="Subject">
+          <div className="flex gap-1">
+            <Input ref={subjectRef} aria-label="Subject" value={subject} disabled={readOnly} onChange={(event) => setSubject(event.target.value)} className="flex-1" />
+            <MergeTagButton onInsert={(tag) => setSubject((s) => insertAtCursor(subjectRef.current, tag, s))} disabled={readOnly} />
+          </div>
+        </Field>
         <Field label="Preheader"><Input aria-label="Preheader" value={preheader} disabled={readOnly} onChange={(event) => setPreheader(event.target.value)} /></Field>
         <Field label="From name"><Input aria-label="From name" value={fromName} disabled={readOnly} onChange={(event) => setFromName(event.target.value)} /></Field>
         <Field label="From email"><Input aria-label="From email" type="email" value={fromEmail} disabled={readOnly} onChange={(event) => setFromEmail(event.target.value)} /></Field>
@@ -532,8 +558,14 @@ function EmailBuilder() {
 
       {mode === 'code' ? (
         <section aria-label="HTML code" className="flex flex-1 flex-col gap-3 bg-background p-4">
-          <p className="text-sm text-muted-foreground">This HTML is what gets sent. Visual shows this same HTML, and this code stays when you switch back.</p>
-          <Textarea aria-label="HTML code" spellCheck={false} value={htmlSource} disabled={readOnly} onChange={(event) => editHtml(event.target.value)} className="min-h-[480px] flex-1 font-mono text-xs" />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">This HTML is what gets sent. Merge tags like {'{{first_name}}'} are replaced with each recipient&apos;s real info when sent.</p>
+            <MergeTagButton
+              disabled={readOnly}
+              onInsert={(tag) => editHtml(insertAtCursor(codeTextareaRef.current, tag, htmlSourceRef.current))}
+            />
+          </div>
+          <Textarea ref={codeTextareaRef} aria-label="HTML code" spellCheck={false} value={htmlSource} disabled={readOnly} onChange={(event) => editHtml(event.target.value)} className="min-h-[480px] flex-1 font-mono text-xs" />
         </section>
       ) : customHtml ? (
         <section aria-label="HTML preview" className="flex flex-1 flex-col gap-3 bg-muted p-4">
@@ -542,7 +574,7 @@ function EmailBuilder() {
             <Button variant="outline" disabled={readOnly} onClick={useBlocks}>Use the previous blocks</Button>
           </div>
           <div className={cn('mx-auto w-full flex-1 overflow-hidden rounded-lg border border-border bg-white', device === 'Desktop' ? 'max-w-6xl' : 'max-w-[440px]')}>
-            <iframe key={htmlSource} title="HTML preview" sandbox="" srcDoc={htmlSource} className="h-[calc(100dvh-12rem)] min-h-[680px] w-full bg-white" />
+            <iframe key={`${htmlSource}-${showSampleTags}`} title="HTML preview" sandbox="" srcDoc={showSampleTags ? applySampleTags(htmlSource) : htmlSource} className="h-[calc(100dvh-12rem)] min-h-[680px] w-full bg-white" />
           </div>
         </section>
       ) : (
@@ -571,7 +603,7 @@ function EmailBuilder() {
                 onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.stopPropagation(); onDrop(event, blockIndex) }}
                 onClick={() => setSelectedId(block.id)} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && (event.preventDefault(), setSelectedId(block.id))}
                 className={cn('relative cursor-pointer outline-2 -outline-offset-2 outline-transparent hover:outline-primary/40 focus-visible:outline-ring', block.id === selectedId && 'outline-primary')}>
-                <BlockView block={block} />
+                <BlockView block={block} showSampleTags={showSampleTags} />
               </div>
             ))}
           </div>
@@ -594,12 +626,12 @@ function EmailBuilder() {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <Label htmlFor="b-text">Text</Label>
-                    <select aria-label="Insert merge tag" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value="" disabled={readOnly} onChange={(event) => { if (event.target.value) update({ text: `${selected.text}${selected.text ? ' ' : ''}${event.target.value}` }) }}>
-                      <option value="">Insert tag</option>
-                      {MERGE_TAGS.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
-                    </select>
+                    <MergeTagButton
+                      disabled={readOnly}
+                      onInsert={(tag) => update({ text: insertAtCursor(textareaRef.current, tag, selected.text) })}
+                    />
                   </div>
-                  <Textarea id="b-text" value={selected.text} disabled={readOnly} onChange={(event) => update({ text: event.target.value })} rows={3} />
+                  <Textarea ref={textareaRef} id="b-text" value={selected.text} disabled={readOnly} onChange={(event) => update({ text: event.target.value })} rows={3} />
                   {selected.type === 'columns' && <p className="text-xs text-muted-foreground">Separate columns with “|”.</p>}
                 </div>
               )}
@@ -761,7 +793,7 @@ function EmailBuilder() {
           </DialogHeader>
           <select aria-label="Contact" className="h-10 rounded-lg border border-input bg-background px-3 text-sm" value={previewContact} onChange={(event) => { void showPreview(event.target.value) }}>
             <option value="">Sample contact</option>
-            {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} ({contact.email})</option>)}
+            {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name ? `${contact.name} (${contact.email})` : contact.email}</option>)}
           </select>
           <iframe key={previewHtml} title="Email preview" sandbox="" srcDoc={previewHtml} className="h-[60vh] w-full rounded-md border border-border bg-white" />
         </DialogContent>

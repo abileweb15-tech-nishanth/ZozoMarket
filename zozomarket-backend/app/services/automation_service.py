@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import InvalidStateError, NotFoundError
 from app.core.tenancy import workspace_scope
-from app.models.account import Workspace
+from app.models.account import User, Workspace
 from app.models.automation import (
     Automation,
     AutomationEnrollment,
@@ -37,7 +37,7 @@ from app.models.template import EmailTemplate
 from app.schemas.automation import AutomationCreate, AutomationUpdate, FlowEdge, FlowNode
 from app.services import analytics_service, contact_service, email_service
 from app.services.query import ilike, paginate
-from app.services.template_service import template_html
+from app.services.template_service import SAMPLE_VARIABLES, template_html
 
 logger = logging.getLogger(__name__)
 
@@ -854,6 +854,32 @@ async def send_test(
             raise InvalidStateError("The template on this email step no longer exists")
         html = html or template_html(template)
         subject = subject or template.subject
+    normalized_email = email.strip().lower()
+    contact = await session.scalar(
+        select(Contact).where(
+            Contact.workspace_id == automation.workspace_id,
+            func.lower(Contact.email) == normalized_email,
+        )
+    )
+    recipient_name = ""
+    recipient_attrs: dict[str, Any] | None = None
+    recipient_contact_id: str | None = None
+    if contact is not None:
+        recipient_name = contact.name
+        recipient_attrs = contact.attributes
+        recipient_contact_id = contact.id
+    else:
+        user = await session.scalar(
+            select(User).where(
+                User.workspace_id == automation.workspace_id,
+                func.lower(User.email) == normalized_email,
+            )
+        )
+        if user is not None and (user.name or "").strip():
+            recipient_name = user.name
+        else:
+            recipient_name = SAMPLE_VARIABLES["name"]
+
     message = EmailMessage(
         workspace_id=automation.workspace_id,
         automation_id=automation.id,
@@ -865,9 +891,10 @@ async def send_test(
     body, rendered_subject, headers = email_service.personalise(
         html=html,
         subject=message.subject,
-        contact_id=message.id,
-        name="Test",
+        contact_id=recipient_contact_id or message.id,
+        name=recipient_name,
         email=email,
+        attributes=recipient_attrs,
         message_id=message.id,
     )
     workspace = await session.get(Workspace, automation.workspace_id)

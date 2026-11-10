@@ -55,6 +55,9 @@ async def list_categories(db: DbSession):
 async def render_design(body: RenderRequest):
     """Render visual-builder blocks to email-safe HTML without saving."""
     html = render_blocks([b.model_dump() for b in body.design], body.preheader)
+    if not body.substitute_tags:
+        out = render_merge_tags(html, body.variables) if body.variables else html
+        return ApiResponse(data=RenderedEmail(html=out, text=html_to_text(out)))
     return ApiResponse(data=_rendered(html, body.variables))
 
 

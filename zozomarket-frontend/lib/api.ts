@@ -653,7 +653,7 @@ export const api = {
       request<TemplateDetail>('/templates', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: { name?: string; category?: string; subject?: string; preheader?: string; design?: EmailBlock[]; html?: string }) =>
       request<TemplateDetail>(`/templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    render: (data: { design: EmailBlock[]; preheader?: string; variables?: Record<string, string> }) =>
+    render: (data: { design: EmailBlock[]; preheader?: string; variables?: Record<string, string>; substituteTags?: boolean }) =>
       request<{ html: string; text: string }>('/templates/render', { method: 'POST', body: JSON.stringify(data) }),
     previewHtml: async (id: string) => {
       const token = getAccessToken()

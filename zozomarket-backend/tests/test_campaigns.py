@@ -222,3 +222,46 @@ async def test_saved_html_is_kept_when_design_is_empty(client):
     assert replaced["design"][0]["text"] == "From blocks"
     assert "From blocks" in replaced["html"]
     assert "Custom code" not in replaced["html"]
+
+
+async def test_test_send_resolves_real_contact_and_user(client, outbox):
+    await make_contact(client, "priya@example.com", name="Priya Sharma")
+    campaign = await make_campaign(
+        client,
+        name="Personal Test",
+        subject="Hi {{first_name}} ({{name}})",
+        design=[],
+        html="<p>Hello {{first_name}}, full: {{name}}, email: {{email}}</p>",
+    )
+
+    resp = await client.post(
+        f"{BASE}/{campaign['id']}/test",
+        json={"emails": ["priya@example.com", "unknown-qa@example.com"]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["affected"] == 2
+
+    by_to = {m.to: m for m in outbox.outbox}
+    assert by_to["priya@example.com"].subject == "[Test] Hi Priya (Priya Sharma)"
+    assert "Hello Priya, full: Priya Sharma, email: priya@example.com" in by_to["priya@example.com"].html
+    assert by_to["unknown-qa@example.com"].subject == "[Test] Hi Alex (Alex Morgan)"
+
+
+async def test_campaign_code_html_personalizes_each_recipient(client, outbox):
+    await make_contact(client, "alice@example.com", name="Alice One")
+    await make_contact(client, "bob@example.com", name="Bob Two")
+    campaign = await make_campaign(
+        client,
+        name="Code Personalization",
+        subject="Welcome {{first_name}}",
+        design=[],
+        html="<div>Hi {{First_Name}}, full name {{contact.name}}, email {{email}}</div>",
+    )
+    send_res = await client.post(f"{BASE}/{campaign['id']}/send")
+    assert send_res.status_code == 202, send_res.text
+
+    by_to = {m.to: m for m in outbox.outbox}
+    assert by_to["alice@example.com"].subject == "Welcome Alice"
+    assert "Hi Alice, full name Alice One, email alice@example.com" in by_to["alice@example.com"].html
+    assert by_to["bob@example.com"].subject == "Welcome Bob"
+    assert "Hi Bob, full name Bob Two, email bob@example.com" in by_to["bob@example.com"].html

@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Segmented } from '@/components/app/shared'
+import { MergeTagButton } from '@/components/app/merge-tag-button'
 import { api, type FlowNode, type Template, type WorkspaceSettings } from '@/lib/api'
-import { ensureFooter, MERGE_TAGS, starterLayouts } from '@/lib/email-design'
+import { applySampleTags, ensureFooter, starterLayouts } from '@/lib/email-design'
 import { cn } from '@/lib/utils'
 
 type Config = Record<string, unknown>
@@ -28,6 +29,19 @@ export function EmailStepSettings({ automationId, node, templates, workspace, on
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState('')
   const [testTo, setTestTo] = useState(workspace?.ownerEmail ?? '')
+  const subjectRef = useRef<HTMLInputElement | null>(null)
+  const htmlRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const insertAtCursor = (
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    tag: string,
+    current: string,
+  ): string => {
+    if (!el) return current + tag
+    const start = el.selectionStart ?? current.length
+    const end = el.selectionEnd ?? current.length
+    return current.slice(0, start) + tag + current.slice(end)
+  }
 
   useEffect(() => {
     let active = true
@@ -94,15 +108,26 @@ export function EmailStepSettings({ automationId, node, templates, workspace, on
   }
 
   const selected = typeof config.templateId === 'string' ? config.templateId : ''
-  const previewHtml = mode === 'Template' ? thumbs[selected] ?? '' : String(config.html ?? '')
+  const previewHtml = mode === 'Template' ? thumbs[selected] ?? '' : applySampleTags(String(config.html ?? ''))
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1.5 text-sm font-medium">
-        Subject
-        <Input value={String(config.subject ?? '')} placeholder="Welcome, {{first_name}}" onChange={(event) => set({ subject: event.target.value })} />
-      </label>
-      <p className="-mt-2 text-xs text-muted-foreground">Merge tags: {MERGE_TAGS.map((tag) => tag.value).join(', ')}</p>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="auto-email-subject" className="text-sm font-medium">Subject</label>
+          <MergeTagButton
+            onInsert={(tag) => set({ subject: insertAtCursor(subjectRef.current, tag, String(config.subject ?? '')) })}
+          />
+        </div>
+        <Input
+          id="auto-email-subject"
+          ref={subjectRef}
+          value={String(config.subject ?? '')}
+          placeholder="Welcome, {{first_name}}"
+          onChange={(event) => set({ subject: event.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">Merge tags automatically fill with each subscriber’s real profile when sent.</p>
+      </div>
 
       <Segmented label="Email content" value={mode} onChange={(value) => {
         setMode(value)
@@ -133,15 +158,25 @@ export function EmailStepSettings({ automationId, node, templates, workspace, on
           </div>
         </div>
       ) : (
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Email HTML
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="auto-email-html" className="text-sm font-medium">Email HTML</label>
+            <MergeTagButton
+              onInsert={(tag) => set({
+                html: insertAtCursor(htmlRef.current, tag, String(config.html ?? '')),
+                templateId: '',
+              })}
+            />
+          </div>
           <textarea
+            id="auto-email-html"
+            ref={htmlRef}
             className="min-h-48 rounded-lg border border-input bg-background p-3 font-mono text-xs"
             value={String(config.html ?? '')}
             placeholder="<h1>Hi {{first_name}}</h1>"
             onChange={(event) => set({ html: event.target.value, templateId: '' })}
           />
-        </label>
+        </div>
       )}
 
       <div className="flex flex-col gap-1.5">

@@ -197,3 +197,36 @@ async def test_sync_ses_endpoint(client):
     data = res.json()["data"]
     assert "checked" in data
     assert "openedCount" in data
+
+
+async def test_automation_test_send_resolves_real_contact(client, outbox):
+    await client.post(
+        "/api/v1/contacts",
+        json={
+            "email": "ravi@example.com",
+            "name": "Ravi Kumar",
+            "attributes": {"company": "ZozoCorp"},
+        },
+    )
+    nodes = [
+        {"id": "t", "kind": "Trigger", "label": "Subscribes"},
+        {
+            "id": "e1",
+            "kind": "Email",
+            "label": "Welcome",
+            "config": {
+                "subject": "Welcome {{first_name}}!",
+                "html": "<p>Hi {{first_name}}, full: {{name}}, company: {{company}}</p>",
+            },
+        },
+        {"id": "end", "kind": "End", "label": "End"},
+    ]
+    edges = [{"source": "t", "target": "e1"}, {"source": "e1", "target": "end"}]
+    saved = await _automation(client, nodes=nodes, edges=edges)
+
+    res = await client.post(f"{BASE}/{saved['id']}/test", json={"email": "ravi@example.com"})
+    assert res.status_code == 200, res.text
+    sent = outbox.outbox[-1]
+    assert sent.subject == "[Test] Welcome Ravi!"
+    assert "Hi Ravi, full: Ravi Kumar, company: ZozoCorp" in sent.html
+    assert "Test" not in sent.html.replace("List-Unsubscribe", "")
