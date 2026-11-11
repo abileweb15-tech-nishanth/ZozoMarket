@@ -1,4 +1,3 @@
-from typing import Any
 from sqlalchemy import JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 

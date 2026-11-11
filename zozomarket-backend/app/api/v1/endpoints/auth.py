@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError
+from app.core.ratelimit import limiter
 from app.schemas.auth import (
     AccountDelete,
     AuthSession,
@@ -18,19 +19,32 @@ from app.services import auth_service
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/signup", response_model=ApiResponse[AuthSession], status_code=201)
+@router.post(
+    "/signup",
+    response_model=ApiResponse[AuthSession],
+    status_code=201,
+    dependencies=[limiter.limit("5/minute")],
+)
 async def signup(db: DbSession, body: SignupRequest):
     if not settings.SIGNUP_ENABLED:
         raise ForbiddenError("Account registration is temporarily disabled", code="signup_disabled")
     return ApiResponse(data=await auth_service.signup(db, body))
 
 
-@router.post("/login", response_model=ApiResponse[AuthSession])
+@router.post(
+    "/login",
+    response_model=ApiResponse[AuthSession],
+    dependencies=[limiter.limit("10/minute")],
+)
 async def login(db: DbSession, body: LoginRequest):
     return ApiResponse(data=await auth_service.login(db, body))
 
 
-@router.post("/refresh", response_model=ApiResponse[AuthSession])
+@router.post(
+    "/refresh",
+    response_model=ApiResponse[AuthSession],
+    dependencies=[limiter.limit("30/minute")],
+)
 async def refresh(db: DbSession, body: RefreshRequest):
     return ApiResponse(data=await auth_service.refresh(db, body.refresh_token))
 

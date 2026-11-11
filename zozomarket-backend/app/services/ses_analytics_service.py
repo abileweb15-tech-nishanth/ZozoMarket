@@ -135,7 +135,7 @@ def _query_metric_sum(
             Statistics=["Sum"],
         )
         total = sum(point.get("Sum", 0.0) for point in response.get("Datapoints", []))
-        return int(round(total))
+        return round(total)
     except ClientError as exc:
         logger.debug("CloudWatch GetMetricStatistics for %s failed: %s", metric_name, exc)
         return 0
@@ -163,7 +163,7 @@ def _calculate_rates(
 
 def _fetch_metrics_sync(campaign: str | None, timeframe_hours: int) -> SesAnalyticsResponse:
     client = _get_cloudwatch_client()
-    now_utc = dt.datetime.now(dt.timezone.utc)
+    now_utc = dt.datetime.now(dt.UTC)
     start_utc = now_utc - dt.timedelta(hours=timeframe_hours)
     period = max(60, min(86400, timeframe_hours * 3600))
 
@@ -268,11 +268,15 @@ def _fetch_metrics_sync(campaign: str | None, timeframe_hours: int) -> SesAnalyt
         cfg_send = _query_metric_sum(client, "Send", cfg_dims, start_utc, now_utc, period)
         if cfg_send > 0:
             tot_send = cfg_send
-            tot_delivery = _query_metric_sum(client, "Delivery", cfg_dims, start_utc, now_utc, period)
+            tot_delivery = _query_metric_sum(
+                client, "Delivery", cfg_dims, start_utc, now_utc, period
+            )
             tot_open = _query_metric_sum(client, "Open", cfg_dims, start_utc, now_utc, period)
             tot_click = _query_metric_sum(client, "Click", cfg_dims, start_utc, now_utc, period)
             tot_bounce = _query_metric_sum(client, "Bounce", cfg_dims, start_utc, now_utc, period)
-            tot_complaint = _query_metric_sum(client, "Complaint", cfg_dims, start_utc, now_utc, period)
+            tot_complaint = _query_metric_sum(
+                client, "Complaint", cfg_dims, start_utc, now_utc, period
+            )
             tot_reject = _query_metric_sum(client, "Reject", cfg_dims, start_utc, now_utc, period)
 
     metrics = SesMetrics(
@@ -320,4 +324,3 @@ async def get_ses_analytics(
     result = await asyncio.to_thread(_fetch_metrics_sync, campaign, tf_hours)
     _CACHE[cache_key] = (now, result)
     return result
-

@@ -99,7 +99,9 @@ async def test_updated_html_is_what_the_preview_shows(client):
     assert "Edited heading" in raw.text
     assert "Original heading" not in raw.text
 
-    renamed = await client.patch(f"/api/v1/templates/{tpl['id']}", json={"name": "Studio note revised"})
+    renamed = await client.patch(
+        f"/api/v1/templates/{tpl['id']}", json={"name": "Studio note revised"}
+    )
     assert renamed.status_code == 200, renamed.text
     assert renamed.json()["data"]["name"] == "Studio note revised"
     assert "Edited heading" in renamed.json()["data"]["html"]

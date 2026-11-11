@@ -60,7 +60,9 @@ def _get_sqs_client():
     )
 
 
-def _receive_messages_sync(queue_url: str, max_messages: int, wait_seconds: int) -> list[dict[str, Any]]:
+def _receive_messages_sync(
+    queue_url: str, max_messages: int, wait_seconds: int
+) -> list[dict[str, Any]]:
     client = _get_sqs_client()
     if client is None:
         return []
@@ -99,9 +101,13 @@ def evaluate_open_event(
     had_bot_scan: bool,
     threshold_seconds: float = 5.0,
 ) -> dict[str, Any]:
-    """Classify open event as bot scan, first human open, transition from bot, or subsequent open."""
-    send_dt = _parse_iso_timestamp(send_timestamp) if isinstance(send_timestamp, str) else send_timestamp
-    open_dt = _parse_iso_timestamp(open_timestamp) if isinstance(open_timestamp, str) else open_timestamp
+    """Classify an open event (bot scan, first human open, bot transition, or repeat open)."""
+    send_dt = (
+        _parse_iso_timestamp(send_timestamp) if isinstance(send_timestamp, str) else send_timestamp
+    )
+    open_dt = (
+        _parse_iso_timestamp(open_timestamp) if isinstance(open_timestamp, str) else open_timestamp
+    )
 
     if send_dt and send_dt.tzinfo is None:
         send_dt = send_dt.replace(tzinfo=dt.UTC)
@@ -150,7 +156,9 @@ def evaluate_open_event(
     }
 
 
-async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, Any]) -> dict[str, Any]:
+async def process_sqs_event_payload(
+    session: AsyncSession, ses_event: dict[str, Any]
+) -> dict[str, Any]:
     """Process a single unpacked SES event dictionary."""
     event_type = ses_event.get("eventType") or ses_event.get("notificationType") or ""
     mail = ses_event.get("mail") or {}
@@ -209,7 +217,9 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
             message.last_bot_scan_at = opened_at
             message.is_bot_suspected = True
             message.status = MessageStatus.BOT_SUSPECTED
-            result["action_taken"] = f"bot_scan_recorded (diff={time_diff:.2f}s < 5.0s, no_automation)"
+            result["action_taken"] = (
+                f"bot_scan_recorded (diff={time_diff:.2f}s < 5.0s, no_automation)"
+            )
             logger.info(
                 "Bot scan detected for message %s (recipient %s, diff %.2fs). Automation held.",
                 message.id,
@@ -229,9 +239,12 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
                 session, message.campaign_id, workspace_id=message.workspace_id, opens=1
             )
             await automation_service.handle_email_opened(session, message)
-            result["action_taken"] = f"bot_to_human_transition (diff={time_diff:.2f}s, trigger_automation=True)"
+            result["action_taken"] = (
+                f"bot_to_human_transition (diff={time_diff:.2f}s, trigger_automation=True)"
+            )
             logger.info(
-                "Bot suspicion cleared for message %s (recipient %s). Human open confirmed; automation triggered.",
+                "Bot suspicion cleared for message %s (recipient %s). "
+                "Human open confirmed; automation triggered.",
                 message.id,
                 message.to_email,
             )
@@ -247,7 +260,9 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
                 session, message.campaign_id, workspace_id=message.workspace_id, opens=1
             )
             await automation_service.handle_email_opened(session, message)
-            result["action_taken"] = f"first_human_open (diff={time_diff:.2f}s, trigger_automation=True)"
+            result["action_taken"] = (
+                f"first_human_open (diff={time_diff:.2f}s, trigger_automation=True)"
+            )
             logger.info(
                 "First human open for message %s (recipient %s, diff %.2fs). Automation triggered.",
                 message.id,
@@ -259,7 +274,9 @@ async def process_sqs_event_payload(session: AsyncSession, ses_event: dict[str, 
             message.last_opened_at = opened_at
             message.open_count = (message.open_count or 0) + 1
             message.is_bot_suspected = False
-            result["action_taken"] = f"subsequent_open (count={message.open_count}, no_duplicate_automation)"
+            result["action_taken"] = (
+                f"subsequent_open (count={message.open_count}, no_duplicate_automation)"
+            )
             logger.info(
                 "Subsequent open for message %s (recipient %s, count %d). Last open updated.",
                 message.id,
@@ -335,9 +352,7 @@ async def poll_and_process_sqs(
     if not url:
         return {"processed": 0, "errors": 0, "status": "no_queue_url"}
 
-    raw_messages = await asyncio.to_thread(
-        _receive_messages_sync, url, max_messages, wait_seconds
-    )
+    raw_messages = await asyncio.to_thread(_receive_messages_sync, url, max_messages, wait_seconds)
 
     if not raw_messages:
         return {"processed": 0, "errors": 0, "status": "no_messages"}
@@ -387,4 +402,3 @@ async def poll_and_process_sqs(
         "events": events_summary,
         "status": "success",
     }
-

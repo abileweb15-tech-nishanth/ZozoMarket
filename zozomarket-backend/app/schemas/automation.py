@@ -3,7 +3,13 @@ from typing import Any
 
 from pydantic import EmailStr, Field, model_validator
 
-from app.models.automation import Automation, AutomationStatus, EnrollmentStatus, NodeKind, TriggerType
+from app.models.automation import (
+    Automation,
+    AutomationStatus,
+    EnrollmentStatus,
+    NodeKind,
+    TriggerType,
+)
 from app.schemas.common import CamelModel, InputModel
 
 
@@ -193,7 +199,6 @@ class ExecutionFlowRead(CamelModel):
     completed_count: int = 0
     enrolled_count: int = 0
     latest_message: LatestMessageRead | None = None
-
 
 
 class SesMessageSyncResult(CamelModel):

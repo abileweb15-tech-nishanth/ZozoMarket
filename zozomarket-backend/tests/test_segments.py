@@ -5,9 +5,15 @@ BASE = "/api/v1/segments"
 
 async def test_segment_lifecycle_and_counts(client):
     # Create test contacts with different tags and statuses
-    await make_contact(client, "alice@example.com", name="Alice", tags=["VIP", "Newsletter"], status="Subscribed")
-    await make_contact(client, "bob@example.com", name="Bob", tags=["Newsletter"], status="Subscribed")
-    await make_contact(client, "carol@example.com", name="Carol", tags=["VIP"], status="Unsubscribed")
+    await make_contact(
+        client, "alice@example.com", name="Alice", tags=["VIP", "Newsletter"], status="Subscribed"
+    )
+    await make_contact(
+        client, "bob@example.com", name="Bob", tags=["Newsletter"], status="Subscribed"
+    )
+    await make_contact(
+        client, "carol@example.com", name="Carol", tags=["VIP"], status="Unsubscribed"
+    )
 
     # Preview count for VIP + Subscribed
     prev = await client.post(f"{BASE}/preview", json={"tags": ["VIP"], "status": "Subscribed"})

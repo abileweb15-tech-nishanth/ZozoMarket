@@ -18,18 +18,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-async def _commit_with_retry(session: AsyncSession, max_retries: int = 5) -> None:
-    for attempt in range(max_retries):
-        try:
-            await session.commit()
-            return
-        except OperationalError as exc:
-            if "database is locked" in str(exc).lower() and attempt < max_retries - 1:
-                await asyncio.sleep(0.08 * (attempt + 1))
-                continue
-            raise
-
 from app.core.config import settings
 from app.core.exceptions import AppError, ExternalServiceError, InvalidStateError, NotFoundError
 from app.models.account import User, Workspace
@@ -51,6 +39,19 @@ from app.services.template_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _commit_with_retry(session: AsyncSession, max_retries: int = 5) -> None:
+    for attempt in range(max_retries):
+        try:
+            await session.commit()
+            return
+        except OperationalError as exc:
+            if "database is locked" in str(exc).lower() and attempt < max_retries - 1:
+                await asyncio.sleep(0.08 * (attempt + 1))
+                continue
+            raise
+
 
 STALE_SENDING_AFTER = dt.timedelta(minutes=15)
 SEND_CONCURRENCY = 10
@@ -422,7 +423,10 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
             await _commit_with_retry(session)
 
             results = await asyncio.gather(
-                *(_send_one(campaign, mid, c, sem, identity, html) for mid, (_, c) in messages.items())
+                *(
+                    _send_one(campaign, mid, c, sem, identity, html)
+                    for mid, (_, c) in messages.items()
+                )
             )
             for message_id, provider_id, error in results:
                 message = messages[message_id][0]
@@ -464,7 +468,9 @@ async def run_dispatch(session: AsyncSession, campaign_id: str) -> None:
         await _commit_with_retry(session)
 
 
-async def sending_identity(session: AsyncSession, campaign: Campaign) -> tuple[str, str, str | None]:
+async def sending_identity(
+    session: AsyncSession, campaign: Campaign
+) -> tuple[str, str, str | None]:
     """From name, from email, and reply-to. Workspace profile wins over a blank campaign field."""
     workspace = await session.get(Workspace, campaign.workspace_id)
     from_name = (campaign.from_name or "").strip()
@@ -474,7 +480,11 @@ async def sending_identity(session: AsyncSession, campaign: Campaign) -> tuple[s
         from_name = (workspace.from_name or "").strip() or workspace.name or from_name
         from_email = (workspace.from_email or "").strip() or from_email
         reply_to = ((workspace.reply_to or "").strip() or None) or reply_to
-    return from_name or settings.EMAIL_FROM_NAME, from_email or settings.EMAIL_FROM_ADDRESS, reply_to
+    return (
+        from_name or settings.EMAIL_FROM_NAME,
+        from_email or settings.EMAIL_FROM_ADDRESS,
+        reply_to,
+    )
 
 
 async def _resolve_test_variables(

@@ -2,29 +2,28 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
 from sqlalchemy import select
-from app.workers import jobs
 
 from app.api.deps import DbSession, PageParams
 from app.models.automation import AutomationStatus
 from app.models.contact import Contact, SubscriptionStatus
 from app.schemas.automation import (
     AutomationCreate,
-    ExecutionFlowRead,
-    NodeExecutionState,
     AutomationRead,
     AutomationUpdate,
     EnrollmentRead,
     EnrollmentResult,
     EnrollRequest,
+    ExecutionFlowRead,
+    SesSyncResult,
     StepRead,
     TestSendRequest,
     TriggerEventRequest,
     WorkflowProblem,
     WorkflowValidation,
-    SesSyncResult,
 )
 from app.schemas.common import ApiResponse, ListResponse, SuccessResponse
 from app.services import automation_service, contact_service
+from app.workers import jobs
 
 router = APIRouter(prefix="/automations", tags=["Automations"])
 
@@ -154,10 +153,12 @@ async def sync_ses(db: DbSession, automation_id: str):
     mark every recipient's email as opened the moment *any* subscriber opens theirs.
     """
     from app.services import sqs_event_service
+
     # 1. Flush all pending SQS events (per-recipient, real-time)
     await sqs_event_service.poll_and_process_sqs(db, max_messages=10, wait_seconds=2)
     # 2. Return a lightweight per-message summary for the canvas
     from app.services.ses_sync import summarise_automation_messages
+
     result = await summarise_automation_messages(db, automation_id)
     return ApiResponse(data=SesSyncResult.model_validate(result))
 
@@ -166,6 +167,7 @@ async def sync_ses(db: DbSession, automation_id: str):
 async def poll_sqs(db: DbSession, automation_id: str):
     """Immediately poll and process pending events from AWS SQS."""
     from app.services import sqs_event_service
+
     result = await sqs_event_service.poll_and_process_sqs(db, max_messages=10, wait_seconds=2)
     return ApiResponse(data=result)
 
@@ -198,7 +200,11 @@ async def archive_automation(db: DbSession, automation_id: str):
     return ApiResponse(data=AutomationRead.from_model(automation))
 
 
-@router.post("/{automation_id}/duplicate", response_model=ApiResponse[AutomationRead], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{automation_id}/duplicate",
+    response_model=ApiResponse[AutomationRead],
+    status_code=status.HTTP_201_CREATED,
+)
 async def duplicate_automation(db: DbSession, automation_id: str):
     automation = await automation_service.duplicate_automation(db, automation_id)
     return ApiResponse(data=AutomationRead.from_model(automation))

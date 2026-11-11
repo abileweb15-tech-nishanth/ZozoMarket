@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Query, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
@@ -105,7 +107,16 @@ async def public_landing_page(db: DbSession, slug: str):
     form = await form_service.get_live_form(db, slug)
     await form_service.record_view(db, slug)
     submit_url = email_service.api_url(f"/public/forms/{slug}/submit")
-    return HTMLResponse(form_service.render_landing_page(form, submit_url))
+    parsed = urlparse(submit_url)
+    connect_src = f"'self' {parsed.scheme}://{parsed.netloc}" if parsed.netloc else "'self'"
+    csp = (
+        f"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        f"connect-src {connect_src}"
+    )
+    return HTMLResponse(
+        form_service.render_landing_page(form, submit_url),
+        headers={"Content-Security-Policy": csp},
+    )
 
 
 @public_router.get("/confirm/{token}", response_class=HTMLResponse)
@@ -113,5 +124,10 @@ async def confirm_subscription(db: DbSession, token: str):
     await form_service.confirm(db, token)
     return HTMLResponse(
         "<!DOCTYPE html><html><body style='font-family:system-ui;text-align:center;"
-        "padding:64px'><h1>You're subscribed!</h1><p>Thanks for confirming.</p></body></html>"
+        "padding:64px'><h1>You're subscribed!</h1><p>Thanks for confirming.</p></body></html>",
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+            )
+        },
     )

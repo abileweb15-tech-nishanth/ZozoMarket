@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     # --- Security & Auth ---
     SECRET_KEY: SecretStr = SecretStr(_DEFAULT_SECRET)
-    ACCESS_TOKEN_MINUTES: int = 60
-    REFRESH_TOKEN_DAYS: int = 14
+    ACCESS_TOKEN_MINUTES: int = 15
+    REFRESH_TOKEN_DAYS: int = 7
     # Public account registration toggle (set to false to temporarily stop signup)
     SIGNUP_ENABLED: bool = Field(
         default=False,
@@ -84,7 +84,9 @@ class Settings(BaseSettings):
     SES_CLOUDWATCH_DIMENSION_NAME: str = "campaign"
     SES_CLOUDWATCH_DIMENSION_VALUE: str = "zozomarket"
     # SQS Event Pipeline for SES granular open/click/bounce tracking
-    SQS_QUEUE_URL: str = "https://sqs.us-east-1.amazonaws.com/998882071456/zozomarket-ses-events-queue"
+    SQS_QUEUE_URL: str = (
+        "https://sqs.us-east-1.amazonaws.com/998882071456/zozomarket-ses-events-queue"
+    )
     SQS_WORKER_ENABLED: bool = True
     SQS_POLL_INTERVAL_SECONDS: float = 5.0
     SQS_MAX_MESSAGES: int = 10
@@ -129,8 +131,15 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _production_guards(self) -> "Settings":
         if self.ENVIRONMENT == "production":
-            if self.SECRET_KEY.get_secret_value() == _DEFAULT_SECRET:
+            secret_value = self.SECRET_KEY.get_secret_value()
+            if secret_value == _DEFAULT_SECRET:
                 raise ValueError("SECRET_KEY must be set in production")
+            if len(secret_value) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters in production")
+            if self.WEBHOOK_SECRET is None or not self.WEBHOOK_SECRET.get_secret_value().strip():
+                raise ValueError(
+                    "WEBHOOK_SECRET must be set in production to secure the webhook endpoint"
+                )
             if self.SEED_DEMO_DATA:
                 raise ValueError("SEED_DEMO_DATA must be false in production")
             if self.AUTO_CREATE_TABLES:

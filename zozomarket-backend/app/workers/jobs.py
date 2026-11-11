@@ -17,9 +17,8 @@ _sqlite_lock = asyncio.Lock()
 
 async def dispatch_campaign(campaign_id: str) -> None:
     if "sqlite" in settings.DATABASE_URL:
-        async with _sqlite_lock:
-            async with database.SessionLocal() as session:
-                await campaign_service.run_dispatch(session, campaign_id)
+        async with _sqlite_lock, database.SessionLocal() as session:
+            await campaign_service.run_dispatch(session, campaign_id)
     else:
         async with database.SessionLocal() as session:
             await campaign_service.run_dispatch(session, campaign_id)

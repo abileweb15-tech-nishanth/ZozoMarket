@@ -113,4 +113,3 @@ async def list_ses_campaigns():
     """List active campaign names discovered in AWS CloudWatch."""
     campaigns = await ses_analytics_service.get_active_campaigns()
     return ApiResponse(data=campaigns)
-

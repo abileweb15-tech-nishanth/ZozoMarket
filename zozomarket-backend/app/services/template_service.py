@@ -107,10 +107,7 @@ def contact_variables(name: str, email: str, extra: Mapping[str, Any] | None = N
         or ""
     )
     extra_full = (
-        extra_lower.get("full_name")
-        or extra_lower.get("fullname")
-        or extra_lower.get("name")
-        or ""
+        extra_lower.get("full_name") or extra_lower.get("fullname") or extra_lower.get("name") or ""
     )
 
     first = parsed_first or extra_first

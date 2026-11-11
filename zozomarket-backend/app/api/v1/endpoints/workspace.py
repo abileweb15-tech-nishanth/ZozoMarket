@@ -9,9 +9,7 @@ router = APIRouter(prefix="/workspace", tags=["Workspace"])
 
 
 def _read(workspace, user) -> WorkspaceRead:
-    return WorkspaceRead.from_workspace(
-        workspace, owner_name=user.name, owner_email=user.email
-    )
+    return WorkspaceRead.from_workspace(workspace, owner_name=user.name, owner_email=user.email)
 
 
 @router.get("", response_model=ApiResponse[WorkspaceRead])

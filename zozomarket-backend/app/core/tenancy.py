@@ -29,6 +29,7 @@ class workspace_scope:
         if self._token is not None:
             current_workspace_id.reset(self._token)
 
+
 _installed = False
 
 

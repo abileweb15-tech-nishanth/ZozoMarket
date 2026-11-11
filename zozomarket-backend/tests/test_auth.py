@@ -111,9 +111,7 @@ async def test_workspaces_do_not_share_contacts(anon_client):
     assert created.status_code == 201, created.text
     contact_id = created.json()["data"]["id"]
 
-    own = await anon_client.get(
-        "/api/v1/contacts", headers={"Authorization": f"Bearer {token_a}"}
-    )
+    own = await anon_client.get("/api/v1/contacts", headers={"Authorization": f"Bearer {token_a}"})
     other = await anon_client.get(
         "/api/v1/contacts", headers={"Authorization": f"Bearer {token_b}"}
     )
@@ -207,4 +205,3 @@ async def test_signup_disabled(anon_client, monkeypatch):
     )
     assert res.status_code == 403
     assert "Account registration is temporarily disabled" in res.json()["error"]
-

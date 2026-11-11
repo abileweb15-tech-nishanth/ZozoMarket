@@ -13,3 +13,6 @@ def configure_logging() -> None:
     )
     for noisy in ("aiosqlite", "httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    if settings.ENVIRONMENT == "production":
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+        logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)

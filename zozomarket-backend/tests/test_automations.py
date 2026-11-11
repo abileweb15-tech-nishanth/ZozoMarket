@@ -75,7 +75,9 @@ async def test_draft_saves_graph_and_activation_rejects_a_broken_one(client):
     again = await client.get(f"{BASE}/{saved['id']}")
     assert again.json()["data"]["nodes"][1]["config"]["subject"] == "Hello"
 
-    broken = await _automation(client, name="Broken", nodes=[{"id": "t", "kind": "Trigger"}], edges=[])
+    broken = await _automation(
+        client, name="Broken", nodes=[{"id": "t", "kind": "Trigger"}], edges=[]
+    )
     refused = await client.post(f"{BASE}/{broken['id']}/activate")
     assert refused.status_code == 409
     assert refused.json()["details"]
@@ -100,7 +102,9 @@ async def test_funnel_sends_waits_and_takes_the_click_branch(client, session, ou
     assert "Ada" in outbox.outbox[0].html
 
     waiting = (
-        await session.execute(select(AutomationEnrollment).where(AutomationEnrollment.contact_id == contact["id"]))
+        await session.execute(
+            select(AutomationEnrollment).where(AutomationEnrollment.contact_id == contact["id"])
+        )
     ).scalar_one()
     assert waiting.current_node_id == "d"
     waiting.next_run_at = utcnow() - dt.timedelta(minutes=1)
@@ -141,13 +145,28 @@ async def test_test_send_uses_the_chosen_step_and_follows_the_edges(client, outb
     template = (
         await client.post(
             "/api/v1/templates",
-            json={"name": "Note", "subject": "From the template", "html": "<p>Template body</p>", "design": []},
+            json={
+                "name": "Note",
+                "subject": "From the template",
+                "html": "<p>Template body</p>",
+                "design": [],
+            },
         )
     ).json()["data"]
     nodes = [
         {"id": "t", "kind": "Trigger", "label": "Subscribes"},
-        {"id": "late", "kind": "Email", "label": "Later", "config": {"subject": "Second", "html": "<p>Second</p>"}},
-        {"id": "first", "kind": "Email", "label": "First", "config": {"templateId": template["id"]}},
+        {
+            "id": "late",
+            "kind": "Email",
+            "label": "Later",
+            "config": {"subject": "Second", "html": "<p>Second</p>"},
+        },
+        {
+            "id": "first",
+            "kind": "Email",
+            "label": "First",
+            "config": {"templateId": template["id"]},
+        },
         {"id": "end", "kind": "End", "label": "End"},
     ]
     edges = [
@@ -162,11 +181,15 @@ async def test_test_send_uses_the_chosen_step_and_follows_the_edges(client, outb
     assert outbox.outbox[-1].subject == "[Test] From the template"
     assert "Template body" in outbox.outbox[-1].html
 
-    chosen = await client.post(f"{BASE}/{saved['id']}/test", json={"email": "qa@example.com", "nodeId": "late"})
+    chosen = await client.post(
+        f"{BASE}/{saved['id']}/test", json={"email": "qa@example.com", "nodeId": "late"}
+    )
     assert chosen.status_code == 200, chosen.text
     assert outbox.outbox[-1].subject == "[Test] Second"
 
-    wrong = await client.post(f"{BASE}/{saved['id']}/test", json={"email": "qa@example.com", "nodeId": "t"})
+    wrong = await client.post(
+        f"{BASE}/{saved['id']}/test", json={"email": "qa@example.com", "nodeId": "t"}
+    )
     assert wrong.status_code == 409
 
 
@@ -187,7 +210,6 @@ async def test_other_workspace_cannot_read_the_automation(client):
     token = other.json()["data"]["accessToken"]
     client.headers["Authorization"] = f"Bearer {token}"
     assert (await client.get(f"{BASE}/{saved['id']}")).status_code == 404
-
 
 
 async def test_sync_ses_endpoint(client):

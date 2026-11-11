@@ -5,7 +5,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.contact import Contact, SubscriptionStatus, Tag, contact_tags
+from app.models.contact import Contact, Tag, contact_tags
 from app.models.segment import Segment
 from app.schemas.segment import SegmentConditionInput, SegmentCreate, SegmentUpdate
 from app.services.query import paginate
@@ -19,7 +19,9 @@ def _has_any_tag(tags: Sequence[str]) -> Any:
     )
 
 
-def segment_query(segment: Segment | SegmentCreate | SegmentConditionInput) -> Select[tuple[Contact]]:
+def segment_query(
+    segment: Segment | SegmentCreate | SegmentConditionInput,
+) -> Select[tuple[Contact]]:
     stmt = select(Contact)
     if segment.status:
         stmt = stmt.where(Contact.status == segment.status)

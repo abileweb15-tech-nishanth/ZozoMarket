@@ -1,12 +1,10 @@
 import datetime as dt
-import json
+
 import pytest
-from sqlalchemy import select
 
 from app.models.account import Workspace
-from app.models.automation import AutomationEnrollment, EnrollmentStatus
 from app.models.message import EmailMessage, MessageStatus
-from app.services import sqs_event_service, automation_service
+from app.services import sqs_event_service
 from app.services.sqs_event_service import evaluate_open_event
 
 

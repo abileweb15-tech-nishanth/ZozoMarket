@@ -129,7 +129,9 @@ async def test_same_name_in_another_workspace_gets_its_own_slug(client, anon_cli
 
 
 async def test_update_and_delete_form(client):
-    form = (await client.post(BASE, json={"name": "Popup offer", "kind": "Popup Forms"})).json()["data"]
+    form = (await client.post(BASE, json={"name": "Popup offer", "kind": "Popup Forms"})).json()[
+        "data"
+    ]
     updated = (
         await client.patch(
             f"{BASE}/{form['id']}",
@@ -137,7 +139,9 @@ async def test_update_and_delete_form(client):
                 "title": "Get the offer",
                 "tags": ["offer"],
                 "kind": "Embedded Forms",
-                "fields": [{"name": "company", "label": "Company", "type": "text", "required": False}],
+                "fields": [
+                    {"name": "company", "label": "Company", "type": "text", "required": False}
+                ],
             },
         )
     ).json()["data"]

@@ -142,7 +142,9 @@ async def test_scheduler_dispatches_due_campaigns(client, outbox, session):
 async def test_concurrent_dispatches_do_not_conflict(client, outbox, session):
     for i in range(5):
         await make_contact(client, f"r{i}@example.com")
-    ids = [(await make_campaign(client, name=f"C{i}", scheduledAt=_future()))["id"] for i in range(3)]
+    ids = [
+        (await make_campaign(client, name=f"C{i}", scheduledAt=_future()))["id"] for i in range(3)
+    ]
     for cid in ids:
         (await session.get(Campaign, cid)).scheduled_at = dt.datetime.now(dt.UTC)
     await session.commit()
@@ -243,7 +245,10 @@ async def test_test_send_resolves_real_contact_and_user(client, outbox):
 
     by_to = {m.to: m for m in outbox.outbox}
     assert by_to["priya@example.com"].subject == "[Test] Hi Priya (Priya Sharma)"
-    assert "Hello Priya, full: Priya Sharma, email: priya@example.com" in by_to["priya@example.com"].html
+    assert (
+        "Hello Priya, full: Priya Sharma, email: priya@example.com"
+        in by_to["priya@example.com"].html
+    )
     assert by_to["unknown-qa@example.com"].subject == "[Test] Hi Alex (Alex Morgan)"
 
 
@@ -262,6 +267,8 @@ async def test_campaign_code_html_personalizes_each_recipient(client, outbox):
 
     by_to = {m.to: m for m in outbox.outbox}
     assert by_to["alice@example.com"].subject == "Welcome Alice"
-    assert "Hi Alice, full name Alice One, email alice@example.com" in by_to["alice@example.com"].html
+    assert (
+        "Hi Alice, full name Alice One, email alice@example.com" in by_to["alice@example.com"].html
+    )
     assert by_to["bob@example.com"].subject == "Welcome Bob"
     assert "Hi Bob, full name Bob Two, email bob@example.com" in by_to["bob@example.com"].html

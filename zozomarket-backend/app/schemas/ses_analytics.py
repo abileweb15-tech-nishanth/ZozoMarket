@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -47,4 +48,3 @@ class SesAnalyticsResponse(BaseModel):
     metrics: SesMetrics
     rates: SesRates
     breakdown: list[SesCampaignBreakdown] = []
-

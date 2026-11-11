@@ -42,6 +42,4 @@ class User(UUIDMixin, TimestampMixin, Base):
         ForeignKey("workspaces.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
-    workspace: Mapped[Workspace] = relationship(
-        foreign_keys=[workspace_id], lazy="selectin"
-    )
+    workspace: Mapped[Workspace] = relationship(foreign_keys=[workspace_id], lazy="selectin")

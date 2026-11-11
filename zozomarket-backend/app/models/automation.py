@@ -66,8 +66,12 @@ class Automation(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     # {"id", "source", "target", "source_handle"} links. Empty means a straight line of nodes.
     edges: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     # Frozen copy used by new enrollments. Running enrollments keep their own copy.
-    published_nodes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
-    published_edges: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    published_nodes: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
+    published_edges: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
     enrolled_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     emails_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

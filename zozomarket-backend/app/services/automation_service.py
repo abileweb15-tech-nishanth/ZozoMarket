@@ -7,6 +7,7 @@ short lease so a restart continues the same step without sending twice.
 
 import datetime as dt
 import html as html_lib
+import itertools
 import logging
 import re
 import uuid
@@ -77,7 +78,7 @@ def normalize_edges(edges: Sequence[FlowEdge | dict[str, Any]]) -> list[dict[str
 def linear_edges(nodes: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     """A saved workflow with no edges still runs top to bottom."""
     edges = []
-    for source, target in zip(nodes, nodes[1:]):
+    for source, target in itertools.pairwise(nodes):
         edges.append(
             {
                 "id": f"{source['id']}-{target['id']}",
@@ -133,21 +134,33 @@ def graph_problems(automation: Automation) -> list[dict[str, str | None]]:
             continue
         amount = (node.get("config") or {}).get("amount")
         if not isinstance(amount, int | float) or amount <= 0:
-            problems.append({"node_id": node.get("id"), "message": "A delay needs an amount greater than zero"})
+            problems.append(
+                {"node_id": node.get("id"), "message": "A delay needs an amount greater than zero"}
+            )
         unit = str((node.get("config") or {}).get("unit", "")).rstrip("s").lower()
         if unit not in _UNIT_SECONDS:
-            problems.append({"node_id": node.get("id"), "message": "A delay unit must be minutes, hours, or days"})
+            problems.append(
+                {
+                    "node_id": node.get("id"),
+                    "message": "A delay unit must be minutes, hours, or days",
+                }
+            )
     for node in nodes:
         config = node.get("config") or {}
         needs_tag = node.get("kind") in (NodeKind.ADD_TAG.value, NodeKind.REMOVE_TAG.value) or (
-            node.get("kind") == NodeKind.CONDITION.value and config.get("type") in ("has_tag", "not_has_tag")
+            node.get("kind") == NodeKind.CONDITION.value
+            and config.get("type") in ("has_tag", "not_has_tag")
         )
         if needs_tag and not str(config.get("tag", "")).strip():
-            problems.append({"node_id": node.get("id"), "message": f"Step '{node.get('label')}' needs a tag"})
+            problems.append(
+                {"node_id": node.get("id"), "message": f"Step '{node.get('label')}' needs a tag"}
+            )
     walking = edges or linear_edges(nodes)
     for edge in walking:
         if edge.get("source") not in ids or edge.get("target") not in ids:
-            problems.append({"node_id": edge.get("source"), "message": "A connection points at a missing node"})
+            problems.append(
+                {"node_id": edge.get("source"), "message": "A connection points at a missing node"}
+            )
     if edges:
         for node in nodes:
             if node.get("kind") != NodeKind.CONDITION.value:
@@ -155,7 +168,10 @@ def graph_problems(automation: Automation) -> list[dict[str, str | None]]:
             handles = {e.get("source_handle") for e in edges if e.get("source") == node.get("id")}
             if "true" not in handles or "false" not in handles:
                 problems.append(
-                    {"node_id": node.get("id"), "message": "A condition needs a true path and a false path"}
+                    {
+                        "node_id": node.get("id"),
+                        "message": "A condition needs a true path and a false path",
+                    }
                 )
         if _has_cycle(nodes, edges):
             problems.append({"node_id": None, "message": "The workflow contains a loop"})
@@ -380,7 +396,9 @@ async def enroll(
         "nodes": list(automation.published_nodes or automation.nodes or []),
         "edges": list(automation.published_edges or automation.edges or []),
     }
-    start = next((n.get("id") for n in graph["nodes"] if n.get("kind") == NodeKind.TRIGGER.value), None)
+    start = next(
+        (n.get("id") for n in graph["nodes"] if n.get("kind") == NodeKind.TRIGGER.value), None
+    )
     if start is None and graph["nodes"]:
         start = graph["nodes"][0].get("id")
     count = 0
@@ -478,27 +496,33 @@ async def _evaluate_condition(
     if not enrollment.last_message_id:
         logger.debug(
             "Condition node %s for enrollment %s: no last_message_id -> False",
-            node.get("id"), enrollment.id,
+            node.get("id"),
+            enrollment.id,
         )
         return False
     message = await session.get(EmailMessage, enrollment.last_message_id)
     if message is None:
         logger.warning(
             "Condition node %s: last_message_id %s not found -> False",
-            node.get("id"), enrollment.last_message_id,
+            node.get("id"),
+            enrollment.last_message_id,
         )
         return False
 
     if kind in ("opened_previous", "not_opened_previous"):
         # opened = human confirmed open (not a bot pre-scan)
-        is_opened = (
-            message.first_opened_at is not None
-            and not getattr(message, "is_bot_suspected", False)
+        is_opened = message.first_opened_at is not None and not getattr(
+            message, "is_bot_suspected", False
         )
         logger.debug(
-            "Condition %s for message %s (contact %s): first_opened_at=%s, is_bot=%s -> is_opened=%s",
-            kind, message.id, contact.email,
-            message.first_opened_at, getattr(message, "is_bot_suspected", False), is_opened,
+            "Condition %s for message %s (contact %s): "
+            "first_opened_at=%s, is_bot=%s -> is_opened=%s",
+            kind,
+            message.id,
+            contact.email,
+            message.first_opened_at,
+            getattr(message, "is_bot_suspected", False),
+            is_opened,
         )
         if kind == "opened_previous":
             return is_opened
@@ -508,7 +532,11 @@ async def _evaluate_condition(
         is_clicked = message.first_clicked_at is not None
         logger.debug(
             "Condition %s for message %s (contact %s): first_clicked_at=%s -> is_clicked=%s",
-            kind, message.id, contact.email, message.first_clicked_at, is_clicked,
+            kind,
+            message.id,
+            contact.email,
+            message.first_clicked_at,
+            is_clicked,
         )
         if kind == "clicked_previous":
             return is_clicked
@@ -697,7 +725,13 @@ async def advance(session: AsyncSession, enrollment: AutomationEnrollment) -> No
                 if last_msg and last_msg.sent_at:
                     anchor = last_msg.sent_at
             enrollment.next_run_at = anchor + dt.timedelta(seconds=delay_seconds(node))
-            await _log(session, enrollment, node["id"], "delayed", f"Wait until {enrollment.next_run_at.isoformat()}")
+            await _log(
+                session,
+                enrollment,
+                node["id"],
+                "delayed",
+                f"Wait until {enrollment.next_run_at.isoformat()}",
+            )
             return
         if kind == NodeKind.EMAIL.value:
             message = await _send_node_email(session, automation, node, contact)
@@ -723,10 +757,14 @@ async def advance(session: AsyncSession, enrollment: AutomationEnrollment) -> No
             enrollment.current_step += 1
             continue
         elif kind == NodeKind.ADD_TAG.value:
-            result = await _apply_tag(session, contact, str((node.get("config") or {}).get("tag", "")), remove=False)
+            result = await _apply_tag(
+                session, contact, str((node.get("config") or {}).get("tag", "")), remove=False
+            )
             await _log(session, enrollment, node["id"], "add_tag", result)
         elif kind == NodeKind.REMOVE_TAG.value:
-            result = await _apply_tag(session, contact, str((node.get("config") or {}).get("tag", "")), remove=True)
+            result = await _apply_tag(
+                session, contact, str((node.get("config") or {}).get("tag", "")), remove=True
+            )
             await _log(session, enrollment, node["id"], "remove_tag", result)
         elif kind == NodeKind.GOAL.value:
             await _log(session, enrollment, node["id"], "goal", node.get("label") or "Goal reached")
@@ -792,10 +830,14 @@ async def list_enrollments(
         limit=limit,
     )
     ids = [row.contact_id for row in rows]
-    contacts = {
-        contact.id: contact
-        for contact in await session.scalars(select(Contact).where(Contact.id.in_(ids)))
-    } if ids else {}
+    contacts = (
+        {
+            contact.id: contact
+            for contact in await session.scalars(select(Contact).where(Contact.id.in_(ids)))
+        }
+        if ids
+        else {}
+    )
     return [(row, contacts.get(row.contact_id)) for row in rows], total
 
 
@@ -844,7 +886,9 @@ async def send_test(
     else:
         node = first_email_in_flow(automation)
     if node is None or _email_node_problems(node):
-        raise InvalidStateError("Add a subject and content or a template to this email step before sending a test")
+        raise InvalidStateError(
+            "Add a subject and content or a template to this email step before sending a test"
+        )
     config = node.get("config") or {}
     html = config.get("html") or config.get("body") or ""
     subject = config.get("subject") or ""
@@ -1014,9 +1058,15 @@ async def get_execution_flow(session: AsyncSession, automation_id: str) -> dict[
             "to_email": latest_msg.to_email,
             "subject": latest_msg.subject,
             "sent_at": latest_msg.sent_at.isoformat() if latest_msg.sent_at else None,
-            "first_opened_at": latest_msg.first_opened_at.isoformat() if latest_msg.first_opened_at else None,
-            "last_opened_at": latest_msg.last_opened_at.isoformat() if latest_msg.last_opened_at else None,
-            "first_clicked_at": latest_msg.first_clicked_at.isoformat() if latest_msg.first_clicked_at else None,
+            "first_opened_at": latest_msg.first_opened_at.isoformat()
+            if latest_msg.first_opened_at
+            else None,
+            "last_opened_at": latest_msg.last_opened_at.isoformat()
+            if latest_msg.last_opened_at
+            else None,
+            "first_clicked_at": latest_msg.first_clicked_at.isoformat()
+            if latest_msg.first_clicked_at
+            else None,
             "bot_scan_at": latest_msg.bot_scan_at.isoformat() if latest_msg.bot_scan_at else None,
             "is_bot_suspected": latest_msg.is_bot_suspected,
             "is_opened": latest_msg.opened,
@@ -1055,7 +1105,9 @@ async def advance_delay(session: AsyncSession, automation_id: str) -> int:
     return advanced
 
 
-async def simulate_message_event(session: AsyncSession, automation_id: str, event_type: str = "open") -> bool:
+async def simulate_message_event(
+    session: AsyncSession, automation_id: str, event_type: str = "open"
+) -> bool:
     """Mark the latest email message of this automation as opened or clicked."""
     enrollments = list(
         await session.scalars(
@@ -1130,7 +1182,9 @@ async def handle_email_opened(session: AsyncSession, message: EmailMessage) -> b
     return False
 
 
-async def handle_email_clicked(session: AsyncSession, message: EmailMessage, url: str | None = None) -> bool:
+async def handle_email_clicked(
+    session: AsyncSession, message: EmailMessage, url: str | None = None
+) -> bool:
     """Invoked when an SQS Click event confirms a recipient clicked a link in this email."""
     if not message.automation_id or not message.contact_id:
         return False

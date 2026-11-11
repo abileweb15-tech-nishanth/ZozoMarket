@@ -225,9 +225,7 @@ async def record_unsubscribe(
             campaign_id = await session.scalar(
                 select(EmailMessage.campaign_id).where(EmailMessage.id == message_id)
             )
-        await bump_stats(
-            session, campaign_id, workspace_id=contact.workspace_id, unsubscribes=1
-        )
+        await bump_stats(session, campaign_id, workspace_id=contact.workspace_id, unsubscribes=1)
     await session.commit()
     return True
 

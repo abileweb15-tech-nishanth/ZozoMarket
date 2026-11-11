@@ -73,7 +73,13 @@ async def unsubscribe_page(token: str):
         "const r=await fetch(location.href,{method:'POST'});"
         "document.getElementById('h').textContent=r.ok?"
         "\"You've been unsubscribed.\":'Something went wrong, please try again.';"
-        "document.getElementById('b').remove();};</script></body></html>"
+        "document.getElementById('b').remove();};</script></body></html>",
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                "connect-src 'self'; frame-ancestors 'none'"
+            )
+        },
     )
 
 

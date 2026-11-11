@@ -157,7 +157,7 @@ async def generate_submissions_csv(session: AsyncSession, form_id: str) -> str:
     output = io.StringIO()
     field_names = [f["name"] for f in form.fields or []]
     field_labels = [f.get("label", f["name"]) for f in form.fields or []]
-    headers = ["Submission Date", "Email", "Name"] + field_labels
+    headers = ["Submission Date", "Email", "Name", *field_labels]
 
     writer = csv.writer(output)
     writer.writerow(headers)
@@ -341,9 +341,13 @@ def render_landing_page(form: Form, submit_url: str) -> str:
         ftype = esc(f.get("type", "text"))
         req_attr = " required" if f.get("required") else ""
         if ftype == "textarea":
-            field_htmls.append(f'<label>{flabel}<textarea name="{fname}"{req_attr}></textarea></label>')
+            field_htmls.append(
+                f'<label>{flabel}<textarea name="{fname}"{req_attr}></textarea></label>'
+            )
         else:
-            field_htmls.append(f'<label>{flabel}<input name="{fname}" type="{ftype}"{req_attr}></label>')
+            field_htmls.append(
+                f'<label>{flabel}<input name="{fname}" type="{ftype}"{req_attr}></label>'
+            )
     extra = "".join(field_htmls)
     return _LANDING_PAGE.substitute(
         title=esc(form.title or form.name),

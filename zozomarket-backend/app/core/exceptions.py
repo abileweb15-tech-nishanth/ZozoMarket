@@ -64,6 +64,20 @@ class ExternalServiceError(AppError):
     code = "external_service_error"
 
 
+class RateLimitExceededError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+    def __init__(
+        self,
+        message: str = "Too many requests. Please try again later.",
+        *,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def error_response(
     status_code: int, message: str, code: str, details: Any = None, headers: dict | None = None
 ) -> JSONResponse:
@@ -88,7 +102,11 @@ _HTTP_CODES = {
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
-        headers = {"WWW-Authenticate": "ApiKey"} if isinstance(exc, UnauthorizedError) else None
+        headers: dict[str, str] | None = None
+        if isinstance(exc, UnauthorizedError):
+            headers = {"WWW-Authenticate": "ApiKey"}
+        elif isinstance(exc, RateLimitExceededError) and exc.retry_after is not None:
+            headers = {"Retry-After": str(exc.retry_after)}
         return error_response(exc.status_code, exc.message, exc.code, exc.details, headers)
 
     @app.exception_handler(RequestValidationError)

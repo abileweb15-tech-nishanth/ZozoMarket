@@ -106,6 +106,8 @@ async def delete_account(session: AsyncSession, user: User, password: str) -> No
         if asset.storage_key:
             await storage.delete(asset.storage_key)
     # Break the owner cycle, then delete the workspace so tenant rows and the user cascade.
-    await session.execute(update(Workspace).where(Workspace.id == workspace_id).values(owner_id=None))
+    await session.execute(
+        update(Workspace).where(Workspace.id == workspace_id).values(owner_id=None)
+    )
     await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
     await session.commit()

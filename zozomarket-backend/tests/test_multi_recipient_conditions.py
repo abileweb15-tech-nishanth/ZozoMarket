@@ -7,7 +7,9 @@ Verifies that when User A opens an email and User B does not:
   - No CloudWatch aggregate bleed-over occurs.
 Tests all 6 condition node types.
 """
+
 import datetime as dt
+
 import pytest
 from sqlalchemy import select
 
@@ -17,7 +19,6 @@ from app.models.automation import (
     AutomationEnrollment,
     AutomationStatus,
     AutomationStep,
-    EnrollmentStatus,
     NodeKind,
     TriggerType,
 )
@@ -25,7 +26,6 @@ from app.models.contact import Contact, SubscriptionStatus, Tag
 from app.models.message import EmailMessage, MessageStatus
 from app.services import automation_service
 from app.services.sqs_event_service import evaluate_open_event
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -43,8 +43,12 @@ async def workspace(session):
 
 @pytest.fixture
 async def contact_a(session, workspace):
-    c = Contact(workspace_id=workspace.id, email="alice@example.com", name="Alice",
-                status=SubscriptionStatus.SUBSCRIBED)
+    c = Contact(
+        workspace_id=workspace.id,
+        email="alice@example.com",
+        name="Alice",
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
     session.add(c)
     await session.commit()
     await session.refresh(c)
@@ -53,16 +57,21 @@ async def contact_a(session, workspace):
 
 @pytest.fixture
 async def contact_b(session, workspace):
-    c = Contact(workspace_id=workspace.id, email="bob@example.com", name="Bob",
-                status=SubscriptionStatus.SUBSCRIBED)
+    c = Contact(
+        workspace_id=workspace.id,
+        email="bob@example.com",
+        name="Bob",
+        status=SubscriptionStatus.SUBSCRIBED,
+    )
     session.add(c)
     await session.commit()
     await session.refresh(c)
     return c
 
 
-def _make_automation(workspace_id: str, condition_type: str = "opened_previous",
-                     tag: str = "") -> dict:
+def _make_automation(
+    workspace_id: str, condition_type: str = "opened_previous", tag: str = ""
+) -> dict:
     """Build a minimal 5-node automation graph with a condition."""
     trigger_id = "t1"
     email1_id = "e1"
@@ -74,22 +83,38 @@ def _make_automation(workspace_id: str, condition_type: str = "opened_previous",
     return {
         "nodes": [
             {"id": trigger_id, "kind": NodeKind.TRIGGER.value, "label": "Trigger", "config": {}},
-            {"id": email1_id,  "kind": NodeKind.EMAIL.value,   "label": "Email 1",
-             "config": {"subject": "Hello!", "html": "<p>Hi</p>"}},
-            {"id": delay_id,   "kind": NodeKind.DELAY.value,   "label": "Wait",
-             "config": {"amount": 0, "unit": "minutes"}},
-            {"id": cond_id,    "kind": NodeKind.CONDITION.value, "label": "Opened?",
-             "config": {"type": condition_type, **tag_config}},
-            {"id": email2_id,  "kind": NodeKind.EMAIL.value,   "label": "Email 2",
-             "config": {"subject": "Follow-up!", "html": "<p>You opened!</p>"}},
-            {"id": end_id,     "kind": NodeKind.END.value,     "label": "End", "config": {}},
+            {
+                "id": email1_id,
+                "kind": NodeKind.EMAIL.value,
+                "label": "Email 1",
+                "config": {"subject": "Hello!", "html": "<p>Hi</p>"},
+            },
+            {
+                "id": delay_id,
+                "kind": NodeKind.DELAY.value,
+                "label": "Wait",
+                "config": {"amount": 0, "unit": "minutes"},
+            },
+            {
+                "id": cond_id,
+                "kind": NodeKind.CONDITION.value,
+                "label": "Opened?",
+                "config": {"type": condition_type, **tag_config},
+            },
+            {
+                "id": email2_id,
+                "kind": NodeKind.EMAIL.value,
+                "label": "Email 2",
+                "config": {"subject": "Follow-up!", "html": "<p>You opened!</p>"},
+            },
+            {"id": end_id, "kind": NodeKind.END.value, "label": "End", "config": {}},
         ],
         "edges": [
-            {"id": "e-t-e1",   "source": trigger_id, "target": email1_id,  "source_handle": None},
-            {"id": "e-e1-d1",  "source": email1_id,  "target": delay_id,   "source_handle": None},
-            {"id": "e-d1-c",   "source": delay_id,   "target": cond_id,    "source_handle": None},
-            {"id": "e-c-yes",  "source": cond_id,    "target": email2_id,  "source_handle": "true"},
-            {"id": "e-c-no",   "source": cond_id,    "target": end_id,     "source_handle": "false"},
+            {"id": "e-t-e1", "source": trigger_id, "target": email1_id, "source_handle": None},
+            {"id": "e-e1-d1", "source": email1_id, "target": delay_id, "source_handle": None},
+            {"id": "e-d1-c", "source": delay_id, "target": cond_id, "source_handle": None},
+            {"id": "e-c-yes", "source": cond_id, "target": email2_id, "source_handle": "true"},
+            {"id": "e-c-no", "source": cond_id, "target": end_id, "source_handle": "false"},
         ],
     }
 
@@ -113,7 +138,7 @@ async def _build_automation(session, workspace, condition_type="opened_previous"
 
 
 async def _enroll_and_advance_to_condition(session, auto, contact):
-    """Enroll contact, advance through Trigger, Email 1, Delay (fast-forwarded), and stop at condition."""
+    """Enroll contact, advance through Trigger, Email 1, and Delay, stopping at condition."""
     now = dt.datetime.now(dt.UTC)
     graph = {"nodes": auto.nodes, "edges": auto.edges}
     start_node_id = next(n["id"] for n in auto.nodes if n.get("kind") == NodeKind.TRIGGER.value)
@@ -152,7 +177,9 @@ async def _skip_delay_and_advance(session, enrollment):
 
 
 @pytest.mark.asyncio
-async def test_multi_recipient_opened_condition_per_recipient_isolation(session, workspace, contact_a, contact_b):
+async def test_multi_recipient_opened_condition_per_recipient_isolation(
+    session, workspace, contact_a, contact_b
+):
     """Alice opens email -> Yes branch.  Bob does not -> No branch.  Bob NEVER gets Email 2."""
     auto = await _build_automation(session, workspace, condition_type="opened_previous")
 
@@ -186,27 +213,25 @@ async def test_multi_recipient_opened_condition_per_recipient_isolation(session,
 
     # --- Check final email counts ---
     all_messages = list(
-        await session.scalars(
-            select(EmailMessage).where(EmailMessage.automation_id == auto.id)
-        )
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
     )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
     assert len(alice_msgs) == 2, f"Alice should get Email 1 + Email 2, got {len(alice_msgs)}"
-    assert len(bob_msgs)   == 1, f"Bob should get only Email 1 (no Email 2), got {len(bob_msgs)}"
+    assert len(bob_msgs) == 1, f"Bob should get only Email 1 (no Email 2), got {len(bob_msgs)}"
 
     # --- Check automation step logs ---
     steps = list(
-        await session.scalars(
-            select(AutomationStep).where(AutomationStep.automation_id == auto.id)
-        )
+        await session.scalars(select(AutomationStep).where(AutomationStep.automation_id == auto.id))
     )
     condition_steps = [s for s in steps if s.action == "condition"]
     # Map enrollment_id -> contact_id for step verification
-    enroll_rows = list(await session.scalars(
-        select(AutomationEnrollment).where(AutomationEnrollment.automation_id == auto.id)
-    ))
+    enroll_rows = list(
+        await session.scalars(
+            select(AutomationEnrollment).where(AutomationEnrollment.automation_id == auto.id)
+        )
+    )
     enroll_contact = {e.id: e.contact_id for e in enroll_rows}
     alice_cond_true = any(
         s.result == "true" and enroll_contact.get(s.enrollment_id) == contact_a.id
@@ -217,13 +242,13 @@ async def test_multi_recipient_opened_condition_per_recipient_isolation(session,
         for s in condition_steps
     )
     assert alice_cond_true, "Alice's condition step must be 'true'"
-    assert bob_cond_false,  "Bob's condition step must be 'false'"
+    assert bob_cond_false, "Bob's condition step must be 'false'"
 
     # --- Check execution flow branch counts ---
     flow = await automation_service.get_execution_flow(session, auto.id)
     cond_node_id = next(n["id"] for n in auto.nodes if n.get("kind") == NodeKind.CONDITION.value)
     cond_state = flow["node_states"][cond_node_id]
-    assert cond_state["true_count"]  == 1, f"Expected 1 Yes (true), got {cond_state['true_count']}"
+    assert cond_state["true_count"] == 1, f"Expected 1 Yes (true), got {cond_state['true_count']}"
     assert cond_state["false_count"] == 1, f"Expected 1 No (false), got {cond_state['false_count']}"
 
 
@@ -250,14 +275,16 @@ async def test_not_opened_previous_condition(session, workspace, contact_a, cont
     await _skip_delay_and_advance(session, enrollment_a)
     await _skip_delay_and_advance(session, enrollment_b)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
     # not_opened: Alice opened -> No branch (End, no Email 2)
     assert len(alice_msgs) == 1, "Alice opened so condition is False -> No branch -> no Email 2"
     # Bob didn't open -> Yes branch -> gets Email 2
-    assert len(bob_msgs)   == 2, "Bob didn't open so condition is True -> Yes branch -> Email 2"
+    assert len(bob_msgs) == 2, "Bob didn't open so condition is True -> Yes branch -> Email 2"
 
 
 # ===========================================================================
@@ -276,21 +303,23 @@ async def test_clicked_previous_condition(session, workspace, contact_a, contact
     # Alice clicks a link in her email
     msg_a = await session.get(EmailMessage, enrollment_a.last_message_id)
     msg_a.first_clicked_at = dt.datetime.now(dt.UTC)
-    msg_a.first_opened_at  = dt.datetime.now(dt.UTC)
+    msg_a.first_opened_at = dt.datetime.now(dt.UTC)
     msg_a.click_count = 1
-    msg_a.open_count  = 1
+    msg_a.open_count = 1
     msg_a.is_bot_suspected = False
     await session.commit()
 
     await _skip_delay_and_advance(session, enrollment_a)
     await _skip_delay_and_advance(session, enrollment_b)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
     assert len(alice_msgs) == 2, "Alice clicked -> Yes -> Email 2"
-    assert len(bob_msgs)   == 1, "Bob did not click -> No -> no Email 2"
+    assert len(bob_msgs) == 1, "Bob did not click -> No -> no Email 2"
 
 
 # ===========================================================================
@@ -308,7 +337,7 @@ async def test_not_clicked_previous_condition(session, workspace, contact_a, con
 
     msg_a = await session.get(EmailMessage, enrollment_a.last_message_id)
     msg_a.first_clicked_at = dt.datetime.now(dt.UTC)
-    msg_a.first_opened_at  = dt.datetime.now(dt.UTC)
+    msg_a.first_opened_at = dt.datetime.now(dt.UTC)
     msg_a.click_count = 1
     msg_a.is_bot_suspected = False
     await session.commit()
@@ -316,12 +345,14 @@ async def test_not_clicked_previous_condition(session, workspace, contact_a, con
     await _skip_delay_and_advance(session, enrollment_a)
     await _skip_delay_and_advance(session, enrollment_b)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
     assert len(alice_msgs) == 1, "Alice clicked -> not_clicked is False -> No -> no Email 2"
-    assert len(bob_msgs)   == 2, "Bob didn't click -> not_clicked is True -> Yes -> Email 2"
+    assert len(bob_msgs) == 2, "Bob didn't click -> not_clicked is True -> Yes -> Email 2"
 
 
 # ===========================================================================
@@ -349,12 +380,14 @@ async def test_has_tag_condition(session, workspace, contact_a, contact_b):
     await _skip_delay_and_advance(session, enrollment_a)
     await _skip_delay_and_advance(session, enrollment_b)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
     assert len(alice_msgs) == 2, "Alice has 'vip' tag -> Yes -> Email 2"
-    assert len(bob_msgs)   == 1, "Bob has no 'vip' tag -> No -> no Email 2"
+    assert len(bob_msgs) == 1, "Bob has no 'vip' tag -> No -> no Email 2"
 
 
 # ===========================================================================
@@ -381,12 +414,16 @@ async def test_not_has_tag_condition(session, workspace, contact_a, contact_b):
     await _skip_delay_and_advance(session, enrollment_a)
     await _skip_delay_and_advance(session, enrollment_b)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
-    bob_msgs   = [m for m in all_messages if m.contact_id == contact_b.id]
+    bob_msgs = [m for m in all_messages if m.contact_id == contact_b.id]
 
-    assert len(alice_msgs) == 1, "Alice has 'blocked' tag -> not_has_tag is False -> No -> no Email 2"
-    assert len(bob_msgs)   == 2, "Bob has no 'blocked' tag -> not_has_tag is True -> Yes -> Email 2"
+    assert len(alice_msgs) == 1, (
+        "Alice has 'blocked' tag -> not_has_tag is False -> No -> no Email 2"
+    )
+    assert len(bob_msgs) == 2, "Bob has no 'blocked' tag -> not_has_tag is True -> Yes -> Email 2"
 
 
 # ===========================================================================
@@ -410,7 +447,9 @@ async def test_opened_condition_false_when_bot_suspected(session, workspace, con
 
     await _skip_delay_and_advance(session, enrollment_a)
 
-    all_messages = list(await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id)))
+    all_messages = list(
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
+    )
     alice_msgs = [m for m in all_messages if m.contact_id == contact_a.id]
     assert len(alice_msgs) == 1, "Bot scan should NOT trigger Yes branch -> no Email 2 sent"
 
@@ -448,26 +487,42 @@ def test_evaluate_open_event_all_actions():
     send_time = dt.datetime(2026, 11, 3, 10, 0, 0, tzinfo=dt.UTC)
 
     # Bot scan
-    res = evaluate_open_event(send_time, dt.datetime(2026, 11, 3, 10, 0, 2, tzinfo=dt.UTC),
-                              already_opened=False, had_bot_scan=False)
+    res = evaluate_open_event(
+        send_time,
+        dt.datetime(2026, 11, 3, 10, 0, 2, tzinfo=dt.UTC),
+        already_opened=False,
+        had_bot_scan=False,
+    )
     assert res["action"] == "RECORD_BOT_SCAN"
     assert res["trigger_automation"] is False
 
     # First human open
-    res = evaluate_open_event(send_time, dt.datetime(2026, 11, 3, 10, 0, 45, tzinfo=dt.UTC),
-                              already_opened=False, had_bot_scan=False)
+    res = evaluate_open_event(
+        send_time,
+        dt.datetime(2026, 11, 3, 10, 0, 45, tzinfo=dt.UTC),
+        already_opened=False,
+        had_bot_scan=False,
+    )
     assert res["action"] == "FIRST_HUMAN_OPEN"
     assert res["trigger_automation"] is True
 
     # Bot-to-human transition
-    res = evaluate_open_event(send_time, dt.datetime(2026, 11, 3, 10, 5, 0, tzinfo=dt.UTC),
-                              already_opened=False, had_bot_scan=True)
+    res = evaluate_open_event(
+        send_time,
+        dt.datetime(2026, 11, 3, 10, 5, 0, tzinfo=dt.UTC),
+        already_opened=False,
+        had_bot_scan=True,
+    )
     assert res["action"] == "TRANSITION_BOT_TO_HUMAN"
     assert res["trigger_automation"] is True
 
     # Subsequent open (idempotent)
-    res = evaluate_open_event(send_time, dt.datetime(2026, 11, 3, 11, 0, 0, tzinfo=dt.UTC),
-                              already_opened=True, had_bot_scan=False)
+    res = evaluate_open_event(
+        send_time,
+        dt.datetime(2026, 11, 3, 11, 0, 0, tzinfo=dt.UTC),
+        already_opened=True,
+        had_bot_scan=False,
+    )
     assert res["action"] == "UPDATE_LAST_OPEN"
     assert res["trigger_automation"] is False
 
@@ -479,12 +534,11 @@ def test_evaluate_open_event_all_actions():
 
 @pytest.mark.asyncio
 async def test_100_recipients_concurrent_isolation(session, workspace):
-    """Stress test verifying 100 concurrent recipients evaluate condition branches in complete isolation.
+    """Verify 100 concurrent recipients evaluate condition branches in complete isolation.
 
     Recipients 0-49: Opened email -> Must take Yes branch (Email 2 sent)
     Recipients 50-99: Unopened -> Must take No branch (End node, no Email 2)
     """
-    import asyncio
 
     auto = await _build_automation(session, workspace, condition_type="opened_previous")
 
@@ -532,24 +586,29 @@ async def test_100_recipients_concurrent_isolation(session, workspace):
 
     # 5. Verify absolute isolation across all 100 recipients
     all_messages = list(
-        await session.scalars(
-            select(EmailMessage).where(EmailMessage.automation_id == auto.id)
-        )
+        await session.scalars(select(EmailMessage).where(EmailMessage.automation_id == auto.id))
     )
 
     for i, c in enumerate(contacts):
         user_msgs = [m for m in all_messages if m.contact_id == c.id]
         if i < 50:
             # Opener group (0..49) - received Email 1 + Follow-up Email 2
-            assert len(user_msgs) == 2, f"User {i} (opener) must have received 2 emails, got {len(user_msgs)}"
+            assert len(user_msgs) == 2, (
+                f"User {i} (opener) must have received 2 emails, got {len(user_msgs)}"
+            )
         else:
             # Non-opener group (50..99) - branched to false (End), strictly 1 email
-            assert len(user_msgs) == 1, f"User {i} (non-opener) MUST NOT receive follow-up email, got {len(user_msgs)}"
+            assert len(user_msgs) == 1, (
+                f"User {i} (non-opener) MUST NOT receive follow-up email, got {len(user_msgs)}"
+            )
 
     # 6. Verify execution flow aggregates match exactly 50 True / 50 False
     flow = await automation_service.get_execution_flow(session, auto.id)
     cond_node_id = next(n["id"] for n in auto.nodes if n.get("kind") == NodeKind.CONDITION.value)
     cond_state = flow["node_states"][cond_node_id]
-    assert cond_state["true_count"] == 50, f"Expected 50 True branches, got {cond_state['true_count']}"
-    assert cond_state["false_count"] == 50, f"Expected 50 False branches, got {cond_state['false_count']}"
-
+    assert cond_state["true_count"] == 50, (
+        f"Expected 50 True branches, got {cond_state['true_count']}"
+    )
+    assert cond_state["false_count"] == 50, (
+        f"Expected 50 False branches, got {cond_state['false_count']}"
+    )

@@ -72,13 +72,14 @@ def verify_token(purpose: str, token: str) -> dict[str, Any] | None:
 
 
 def verify_webhook_signature(body: bytes, signature: str | None) -> bool:
-    if settings.WEBHOOK_SECRET is None:
+    secret = settings.WEBHOOK_SECRET.get_secret_value().strip() if settings.WEBHOOK_SECRET else ""
+    if not secret:
+        if settings.ENVIRONMENT == "production":
+            return False
         return not settings.auth_enabled
     if not signature:
         return False
-    expected = hmac.new(
-        settings.WEBHOOK_SECRET.get_secret_value().encode(), body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature.removeprefix("sha256="), expected)
 
 
