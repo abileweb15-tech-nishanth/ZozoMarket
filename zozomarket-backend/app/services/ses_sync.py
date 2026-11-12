@@ -1,7 +1,7 @@
 """Sync email open and click events from Amazon SES / CloudWatch metrics.
 
 When recipients open emails in Gmail, Google's proxy fetches the SES tracking pixel
-from https://r.us-east-1.awstrack.me/... which SES logs directly to CloudWatch
+from https://r.<aws-region>.awstrack.me/... which SES logs directly to CloudWatch
 under namespace 'AWS/SES' with dimension campaign=zozomarket.
 
 This service queries CloudWatch to discover real email opens and update local

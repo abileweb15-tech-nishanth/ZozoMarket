@@ -52,7 +52,7 @@
 
 - **Date**: 2026-10-26
 - **Status**: Accepted
-- **Context**: Outbound mail went through Mailtrap, which is a testing inbox. The verified production identity is an SES email address in `us-east-1`, with a configuration set for delivery events.
+- **Context**: Outbound mail went through Mailtrap, which is a testing inbox. The verified production identity is an SES email address in `ap-southeast-2` (configured via `AWS_REGION`), with a configuration set for delivery events.
 - **Decision**:
   1. `EMAIL_PROVIDER=ses` sends with `boto3` client `sesv2`. SMTP and the Mailtrap client are removed.
   2. Keys, region, From address, and configuration set come from the environment. The From address is always `SES_FROM_EMAIL`. Reply-To stays the workspace reply-to.

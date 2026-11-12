@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -77,16 +78,14 @@ class Settings(BaseSettings):
     EMAIL_FROM_NAME: str = "ZozoMarket"
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: SecretStr | None = None
-    AWS_REGION: str = "us-east-1"
+    AWS_REGION: str = "ap-southeast-2"
     SES_FROM_EMAIL: str = ""
     SES_CONFIGURATION_SET: str = ""
     # CloudWatch dimension published by the SES configuration set.
     SES_CLOUDWATCH_DIMENSION_NAME: str = "campaign"
     SES_CLOUDWATCH_DIMENSION_VALUE: str = "zozomarket"
     # SQS Event Pipeline for SES granular open/click/bounce tracking
-    SQS_QUEUE_URL: str = (
-        "https://sqs.us-east-1.amazonaws.com/998882071456/zozomarket-ses-events-queue"
-    )
+    SQS_QUEUE_URL: str = ""
     SQS_WORKER_ENABLED: bool = True
     SQS_POLL_INTERVAL_SECONDS: float = 5.0
     SQS_MAX_MESSAGES: int = 10
@@ -146,6 +145,20 @@ class Settings(BaseSettings):
                 raise ValueError("AUTO_CREATE_TABLES must be false in production")
             if "localhost" in self.PUBLIC_BASE_URL or "127.0.0.1" in self.PUBLIC_BASE_URL:
                 raise ValueError("PUBLIC_BASE_URL must be the public API address in production")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_sqs_region(self) -> "Settings":
+        if self.SQS_WORKER_ENABLED and self.SQS_QUEUE_URL:
+            match = re.match(
+                r"^https://sqs\.([a-z0-9-]+)\.amazonaws\.com/",
+                self.SQS_QUEUE_URL.strip(),
+            )
+            if match and match.group(1) != self.AWS_REGION:
+                raise ValueError(
+                    f"SQS_QUEUE_URL region '{match.group(1)}' does not match "
+                    f"AWS_REGION '{self.AWS_REGION}'"
+                )
         return self
 
     @property

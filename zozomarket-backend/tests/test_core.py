@@ -106,7 +106,7 @@ def _ses_settings(monkeypatch, **overrides: object) -> None:
     monkeypatch.setattr(settings, "EMAIL_PROVIDER", "ses")
     monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
     monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
-    monkeypatch.setattr(settings, "AWS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "AWS_REGION", "ap-southeast-2")
     monkeypatch.setattr(settings, "SES_FROM_EMAIL", "sender@example.com")
     monkeypatch.setattr(settings, "SES_CONFIGURATION_SET", "tracking-set")
     monkeypatch.setattr(settings, "EMAIL_FROM_NAME", "ZozoMarket")
@@ -122,8 +122,12 @@ def test_ses_send_forwards_html_and_configuration_set(monkeypatch):
             captured["kwargs"] = kwargs
             return {"MessageId": "ses-1"}
 
+    def fake_boto3_client(service: str, **kwargs: object) -> FakeClient:
+        captured["client"] = (service, kwargs.get("region_name"))
+        return FakeClient()
+
     _ses_settings(monkeypatch)
-    monkeypatch.setattr("boto3.client", lambda *_args, **_kwargs: FakeClient())
+    monkeypatch.setattr("boto3.client", fake_boto3_client)
     get_sender.cache_clear()
     try:
         html = "<p>The fall menu is ready.</p>"
@@ -152,6 +156,7 @@ def test_ses_send_forwards_html_and_configuration_set(monkeypatch):
         assert simple["Headers"] == [
             {"Name": "List-Unsubscribe", "Value": "<https://example.com/unsub>"}
         ]
+        assert captured["client"] == ("sesv2", "ap-southeast-2")
         assert result.provider_message_id == "ses-1"
     finally:
         get_sender.cache_clear()
@@ -227,15 +232,22 @@ def test_ses_daily_counts_read_cloudwatch(monkeypatch):
 
     monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
     monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
-    monkeypatch.setattr(settings, "AWS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "AWS_REGION", "ap-southeast-2")
     monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_NAME", "campaign")
     monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_VALUE", "zozomarket")
-    monkeypatch.setattr("boto3.client", lambda *_args, **_kwargs: FakeCloudWatch())
+    seen_regions: list[object] = []
+
+    def fake_cw_client(service: str, **kwargs: object) -> FakeCloudWatch:
+        seen_regions.append((service, kwargs.get("region_name")))
+        return FakeCloudWatch()
+
+    monkeypatch.setattr("boto3.client", fake_cw_client)
     day = dt.date(2026, 10, 26)
     try:
         result = asyncio.run(ses_stats.daily_counts(day, day))
     finally:
         ses_stats._CACHE.clear()
+    assert seen_regions == [("cloudwatch", "ap-southeast-2")]
     assert result is not None
     assert result[day]["delivered"] == 3
     assert result[day]["sent"] == 4
