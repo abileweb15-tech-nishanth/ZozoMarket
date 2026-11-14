@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { PageHeader, Panel, StatusBadge, NativeSelect, Segmented, EmptyState } from '@/components/app/shared'
+import { PageHeader, Panel, StatusBadge, NativeSelect, Segmented, EmptyState, TableSkeleton } from '@/components/app/shared'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api, type CalendarEvent } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -16,13 +17,20 @@ type View = 'Month' | 'List'
 
 export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [year, setYear] = useState(2026)
-  const [month, setMonth] = useState(9) // October = 9 (0-indexed)
+  const [loading, setLoading] = useState(true)
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [month, setMonth] = useState(new Date().getMonth())
   const [view, setView] = useState<View>('Month')
   const [typeFilter, setTypeFilter] = useState<(typeof typeFilters)[number]>('All Types')
 
   useEffect(() => {
-    api.calendar.list().then(setEvents).catch((err: Error) => toast.error(err.message))
+    let active = true
+    api.calendar
+      .list()
+      .then((d) => { if (active) setEvents(d) })
+      .catch((err: Error) => toast.error(err.message))
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [])
 
   const filtered = useMemo(() => {
@@ -100,7 +108,19 @@ export default function CalendarPage() {
         </Button>
       </div>
 
-      {view === 'Month' ? (
+      {loading ? (
+        view === 'Month' ? (
+          <Panel bodyClassName="p-4">
+            <div className="grid grid-cols-7 gap-2">
+              {Array.from({ length: 35 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-24 w-full rounded-md" />
+              ))}
+            </div>
+          </Panel>
+        ) : (
+          <TableSkeleton columns={5} rows={5} />
+        )
+      ) : view === 'Month' ? (
         <Panel bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="w-full table-fixed">

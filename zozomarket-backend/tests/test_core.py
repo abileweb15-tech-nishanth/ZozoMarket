@@ -102,14 +102,25 @@ def test_render_blocks_adds_unsubscribe_when_missing():
     assert kept.count("{{unsubscribe_url}}") == 1
 
 
-def _ses_settings(monkeypatch, **overrides: object) -> None:
+def _ses_settings(monkeypatch, *, clear_aws: bool = False, **overrides: object) -> None:
+    from app.services.aws_credentials import AwsCredentials, set_aws_credentials_cache
+
     monkeypatch.setattr(settings, "EMAIL_PROVIDER", "ses")
-    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
-    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
-    monkeypatch.setattr(settings, "AWS_REGION", "ap-southeast-2")
-    monkeypatch.setattr(settings, "SES_FROM_EMAIL", "sender@example.com")
-    monkeypatch.setattr(settings, "SES_CONFIGURATION_SET", "tracking-set")
-    monkeypatch.setattr(settings, "EMAIL_FROM_NAME", "ZozoMarket")
+    if clear_aws:
+        set_aws_credentials_cache(None)
+    else:
+        set_aws_credentials_cache(
+            AwsCredentials(
+                access_key_id="test-key",
+                secret_access_key="test-secret",
+                region="ap-southeast-2",
+                configuration_set="tracking-set",
+                cloudwatch_dimension_name="campaign",
+                cloudwatch_dimension_value="zozomarket",
+                from_email="sender@example.com",
+                from_name="ZozoMarket",
+            )
+        )
     for name, value in overrides.items():
         monkeypatch.setattr(settings, name, value)
 
@@ -191,11 +202,11 @@ def test_ses_requires_credentials_before_calling_ses(monkeypatch):
     def refuse(*_args, **_kwargs):
         raise AssertionError("SES was called")
 
-    _ses_settings(monkeypatch, AWS_ACCESS_KEY_ID="", AWS_SECRET_ACCESS_KEY=None)
+    _ses_settings(monkeypatch, clear_aws=True)
     monkeypatch.setattr("boto3.client", refuse)
     get_sender.cache_clear()
     try:
-        with pytest.raises(EmailDeliveryError, match="AWS_ACCESS_KEY_ID"):
+        with pytest.raises(EmailDeliveryError, match="AWS Access Key ID"):
             asyncio.run(
                 get_sender().send(
                     OutboundEmail(to="reader@example.com", subject="Hi", html="<p>Hi</p>")
@@ -207,6 +218,7 @@ def test_ses_requires_credentials_before_calling_ses(monkeypatch):
 
 def test_ses_daily_counts_read_cloudwatch(monkeypatch):
     from app.services import ses_stats
+    from app.services.aws_credentials import AwsCredentials, set_aws_credentials_cache
 
     ses_stats._CACHE.clear()
     seen: list[str] = []
@@ -230,9 +242,13 @@ def test_ses_daily_counts_read_cloudwatch(monkeypatch):
                 }
             return {"Datapoints": []}
 
-    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "test-key")
-    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "test-secret")
-    monkeypatch.setattr(settings, "AWS_REGION", "ap-southeast-2")
+    set_aws_credentials_cache(
+        AwsCredentials(
+            access_key_id="test-key",
+            secret_access_key="test-secret",
+            region="ap-southeast-2",
+        )
+    )
     monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_NAME", "campaign")
     monkeypatch.setattr(settings, "SES_CLOUDWATCH_DIMENSION_VALUE", "zozomarket")
     seen_regions: list[object] = []
@@ -258,6 +274,94 @@ def test_ses_daily_counts_read_cloudwatch(monkeypatch):
 def test_merge_tags_escape_values():
     out = render_merge_tags("Hi {{ first_name }}!{{unknown}}", {"first_name": "<b>Al</b>"})
     assert out == "Hi &lt;b&gt;Al&lt;/b&gt;!"
+
+
+def test_ses_inlines_local_media_images_as_cid(monkeypatch):
+    from app.services.media_service import get_storage
+
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    key = "ab/cdef0123456789.png"
+    storage = get_storage()
+    target = storage.root / key
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(png_bytes)
+
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def send_email(self, **kwargs: object) -> dict[str, str]:
+            captured["kwargs"] = kwargs
+            return {"MessageId": "ses-cid-1"}
+
+    _ses_settings(monkeypatch)
+    monkeypatch.setattr("boto3.client", lambda *_a, **_kw: FakeClient())
+    try:
+        html = f'<p>Look:</p><img src="http://localhost:8000/media/{key}" alt="Hero">'
+        result = asyncio.run(
+            get_sender().send(
+                OutboundEmail(
+                    to="reader@example.com",
+                    subject="Inline image test",
+                    html=html,
+                    from_email="sender@example.com",
+                    from_name="ZozoMarket",
+                )
+            )
+        )
+        assert result.provider_message_id == "ses-cid-1"
+        req = captured["kwargs"]
+        simple = req["Content"]["Simple"]
+        assert "cid:zm-" in simple["Body"]["Html"]["Data"]
+        attachments = simple["Attachments"]
+        assert len(attachments) == 1
+        assert attachments[0]["ContentDisposition"] == "INLINE"
+        assert attachments[0]["ContentTransferEncoding"] == "BASE64"
+        assert attachments[0]["RawContent"] == png_bytes
+        assert attachments[0]["ContentId"].startswith("zm-")
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def test_brand_blocks_preserves_custom_builder_design_and_image_order():
+    from types import SimpleNamespace
+    from app.services.template_service import brand_blocks
+
+    workspace = SimpleNamespace(
+        name="nishanth-market",
+        from_name="Zozothemes",
+        brand_color="#f59e0b",
+        font="Inter",
+        logo_url="http://localhost:8000/media/f1/logo.png",
+        mailing_address="",
+    )
+    blocks = [
+        {
+            "id": "b1-logo",
+            "type": "logo",
+            "text": "Zozo Market platform",
+            "color": "#ffffff",
+            "bg": "#ffa200",
+            "image": None,
+        },
+        {
+            "id": "b2-image",
+            "type": "image",
+            "text": "Image",
+            "image": "http://localhost:8000/media/52/hero.jpg",
+        },
+        {"id": "b3-paragraph", "type": "paragraph", "text": "Hi, {{first_name}}"},
+        {"id": "b4-footer", "type": "footer", "text": "Zozo maarketing · {{unsubscribe_url}}"},
+    ]
+    branded = brand_blocks(blocks, workspace)
+    html = render_blocks(branded)
+
+    assert "Zozo Market platform" in html
+    assert "color:#ffffff;background-color:#ffa200" in html
+    assert "http://localhost:8000/media/f1/logo.png" not in html
+    assert "Zozo maarketing" in html
+    assert html.index("Zozo Market platform") < html.index("http://localhost:8000/media/52/hero.jpg")
+    assert html.index("http://localhost:8000/media/52/hero.jpg") < html.index("Hi, {{first_name}}")
+    assert html.index("Hi, {{first_name}}") < html.index("Zozo maarketing")
 
 
 def test_merge_tags_aliases_and_contact_attributes():

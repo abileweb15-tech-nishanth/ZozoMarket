@@ -277,7 +277,7 @@ def _unsubscribe_row() -> str:
 
 
 def brand_blocks(blocks: Sequence[Mapping[str, Any]], workspace: Any) -> list[dict[str, Any]]:
-    """Logo and footer follow the workspace profile. The rest of the design is unchanged."""
+    """Fill placeholder logo and footer blocks from the workspace profile without overwriting custom edits."""
     if workspace is None:
         return [dict(block) for block in blocks]
     name = getattr(workspace, "name", "") or ""
@@ -289,16 +289,21 @@ def brand_blocks(blocks: Sequence[Mapping[str, Any]], workspace: Any) -> list[di
         block = dict(raw)
         kind = block.get("type")
         if kind == "logo":
-            if brand_name:
-                block["text"] = brand_name
-            if getattr(workspace, "brand_color", None):
-                block["color"] = workspace.brand_color
-            if getattr(workspace, "font", None):
-                block["font"] = workspace.font
-            if getattr(workspace, "logo_url", None):
-                block["image"] = workspace.logo_url
+            current_text = (block.get("text") or "").strip()
+            is_placeholder = not current_text or current_text == "Your brand"
+            if is_placeholder:
+                if brand_name:
+                    block["text"] = brand_name
+                if getattr(workspace, "brand_color", None):
+                    block["color"] = workspace.brand_color
+                if getattr(workspace, "font", None):
+                    block["font"] = workspace.font
+                if getattr(workspace, "logo_url", None) and not block.get("image"):
+                    block["image"] = workspace.logo_url
         elif kind == "footer" and place:
-            block["text"] = f"{place} · {{{{unsubscribe_url}}}}"
+            current_footer = (block.get("text") or "").strip()
+            if not current_footer or current_footer == "Your company · {{unsubscribe_url}}":
+                block["text"] = f"{place} · {{{{unsubscribe_url}}}}"
         branded.append(block)
     return branded
 

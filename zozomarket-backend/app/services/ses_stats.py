@@ -13,6 +13,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
+from app.services.aws_credentials import get_aws_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -24,60 +25,118 @@ _METRIC_KEYS = {
     "Click": "clicks",
     "Bounce": "bounces",
 }
-_CACHE: dict[tuple[str, str, str], tuple[float, dict[dt.date, dict[str, int]]]] = {}
+_CACHE: dict[tuple[str, str, str, str], tuple[float, dict[dt.date, dict[str, int]]]] = {}
 _TTL_SECONDS = 60.0
-
-
-def _secret(value: object) -> str:
-    if value is None:
-        return ""
-    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
-    return revealed or ""
 
 
 def _blank() -> dict[str, int]:
     return {"sent": 0, "delivered": 0, "opens": 0, "clicks": 0, "bounces": 0, "unsubscribes": 0}
 
 
-def _fetch(start: dt.date, end: dt.date) -> dict[dt.date, dict[str, int]] | None:
-    access_key = (settings.AWS_ACCESS_KEY_ID or "").strip()
-    secret_key = _secret(settings.AWS_SECRET_ACCESS_KEY)
-    dimension = (settings.SES_CLOUDWATCH_DIMENSION_NAME or "").strip()
-    dimension_value = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
-    if not access_key or not secret_key or not dimension or not dimension_value:
+def _query_daily_dimensions(
+    client,
+    dimensions: list[dict[str, str]],
+    start: dt.date,
+    end: dt.date,
+    start_at: dt.datetime,
+    end_at: dt.datetime,
+) -> dict[dt.date, dict[str, int]]:
+    days: dict[dt.date, dict[str, int]] = {}
+    for metric, key in _METRIC_KEYS.items():
+        response = client.get_metric_statistics(
+            Namespace="AWS/SES",
+            MetricName=metric,
+            Dimensions=dimensions,
+            StartTime=start_at,
+            EndTime=end_at,
+            Period=86400,
+            Statistics=["Sum"],
+        )
+        for point in response.get("Datapoints", []):
+            stamp = point["Timestamp"]
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=dt.UTC)
+            day = stamp.astimezone(dt.UTC).date()
+            if day < start or day > end:
+                continue
+            bucket = days.setdefault(day, _blank())
+            bucket[key] = int(point.get("Sum") or 0)
+    return days
+
+
+def _discover_campaign_dimensions(client) -> list[str]:
+    campaigns: set[str] = set()
+    paginator = client.get_paginator("list_metrics")
+    for page in paginator.paginate(Namespace="AWS/SES"):
+        for metric in page.get("Metrics", []):
+            for dim in metric.get("Dimensions", []):
+                if dim.get("Name") == "campaign":
+                    val = (dim.get("Value") or "").strip()
+                    if val:
+                        campaigns.add(val)
+    return sorted(campaigns)
+
+
+def _fetch(start: dt.date, end: dt.date, campaign_name: str | None = None) -> dict[dt.date, dict[str, int]] | None:
+    creds = get_aws_credentials()
+    if creds is None:
         return None
+    dimension = (creds.cloudwatch_dimension_name or "").strip()
+    dimension_value = (creds.cloudwatch_dimension_value or "").strip()
+    cfg_set = (creds.configuration_set or "").strip()
 
     # EndTime is exclusive, so include the whole of `end`.
     start_at = dt.datetime.combine(start, dt.time.min, tzinfo=dt.UTC)
     end_at = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, tzinfo=dt.UTC)
-    dimensions = [{"Name": dimension, "Value": dimension_value}]
-    days: dict[dt.date, dict[str, int]] = {}
     try:
         client = boto3.client(
             "cloudwatch",
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
+            region_name=creds.region,
+            aws_access_key_id=creds.access_key_id,
+            aws_secret_access_key=creds.secret_access_key,
         )
-        for metric, key in _METRIC_KEYS.items():
-            response = client.get_metric_statistics(
-                Namespace="AWS/SES",
-                MetricName=metric,
-                Dimensions=dimensions,
-                StartTime=start_at,
-                EndTime=end_at,
-                Period=86400,
-                Statistics=["Sum"],
+        if campaign_name:
+            return _query_daily_dimensions(
+                client,
+                [{"Name": "campaign", "Value": campaign_name.strip()}],
+                start,
+                end,
+                start_at,
+                end_at,
             )
-            for point in response.get("Datapoints", []):
-                stamp = point["Timestamp"]
-                if stamp.tzinfo is None:
-                    stamp = stamp.replace(tzinfo=dt.UTC)
-                day = stamp.astimezone(dt.UTC).date()
-                if day < start or day > end:
-                    continue
-                bucket = days.setdefault(day, _blank())
-                bucket[key] = int(point.get("Sum") or 0)
+        days: dict[dt.date, dict[str, int]] = {}
+        if dimension and dimension_value:
+            days = _query_daily_dimensions(
+                client,
+                [{"Name": dimension, "Value": dimension_value}],
+                start,
+                end,
+                start_at,
+                end_at,
+            )
+        if not days and cfg_set:
+            days = _query_daily_dimensions(
+                client,
+                [{"Name": "ses:configuration-set", "Value": cfg_set}],
+                start,
+                end,
+                start_at,
+                end_at,
+            )
+        if not days:
+            for camp in _discover_campaign_dimensions(client):
+                camp_days = _query_daily_dimensions(
+                    client,
+                    [{"Name": "campaign", "Value": camp}],
+                    start,
+                    end,
+                    start_at,
+                    end_at,
+                )
+                for day, counts in camp_days.items():
+                    bucket = days.setdefault(day, _blank())
+                    for k, v in counts.items():
+                        bucket[k] += v
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "ClientError")
         logger.warning("SES CloudWatch stats unavailable (%s)", code)
@@ -88,15 +147,19 @@ def _fetch(start: dt.date, end: dt.date) -> dict[dt.date, dict[str, int]] | None
     return days
 
 
-async def daily_counts(start: dt.date, end: dt.date) -> dict[dt.date, dict[str, int]] | None:
+async def daily_counts(
+    start: dt.date, end: dt.date, campaign_name: str | None = None
+) -> dict[dt.date, dict[str, int]] | None:
     """Per-day SES counts, or None when CloudWatch cannot be read."""
-    dimension = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
-    key = (start.isoformat(), end.isoformat(), dimension)
+    creds = get_aws_credentials()
+    region = (creds.region if creds else settings.AWS_REGION or "").strip()
+    dimension = (campaign_name or (creds.cloudwatch_dimension_value if creds else "zozomarket")).strip()
+    key = (start.isoformat(), end.isoformat(), region, dimension)
     cached = _CACHE.get(key)
     now = time.monotonic()
     if cached is not None and now - cached[0] < _TTL_SECONDS:
         return cached[1]
-    data = await asyncio.to_thread(_fetch, start, end)
+    data = await asyncio.to_thread(_fetch, start, end, campaign_name)
     if data is not None:
         _CACHE[key] = (now, data)
     return data

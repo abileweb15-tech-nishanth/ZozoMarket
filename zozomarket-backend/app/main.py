@@ -17,6 +17,8 @@ from app.core.config import settings
 from app.core.exceptions import error_response, register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.tenancy import install_tenant_filter
+from app.services.aws_credentials import load_aws_credentials
+from app.services.media_service import resolve_writable_media_root
 from app.workers.scheduler import Scheduler
 from app.workers.sqs_worker import SqsWorker
 
@@ -26,11 +28,40 @@ configure_logging()
 logger = logging.getLogger("app")
 
 
+async def _ensure_workspace_aws_columns() -> None:
+    """Ensure the AWS settings columns exist on workspaces even if alembic was not run yet."""
+    statements = [
+        "ALTER TABLE workspaces ADD COLUMN aws_access_key_id TEXT",
+        "ALTER TABLE workspaces ADD COLUMN aws_secret_access_key TEXT",
+        "ALTER TABLE workspaces ADD COLUMN aws_region VARCHAR(64) NOT NULL DEFAULT 'us-east-1'",
+        "ALTER TABLE workspaces ADD COLUMN aws_encryption_disabled BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE workspaces ADD COLUMN ses_configuration_set VARCHAR(200)",
+        "ALTER TABLE workspaces ADD COLUMN sqs_queue_url VARCHAR(1000)",
+        "ALTER TABLE workspaces ADD COLUMN s3_bucket_name VARCHAR(255)",
+        "ALTER TABLE workspaces ADD COLUMN aws_s3_media_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE email_stats_daily ADD COLUMN aws_region VARCHAR(64) NOT NULL DEFAULT ''",
+        "ALTER TABLE campaigns ADD COLUMN aws_region VARCHAR(64)",
+    ]
+    for sql in statements:
+        try:
+            async with database.engine.begin() as conn:
+                await conn.execute(text(sql))
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.AUTO_CREATE_TABLES:
         await database.create_all()
-    settings.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    await _ensure_workspace_aws_columns()
+    resolve_writable_media_root()
+
+    try:
+        async with database.SessionLocal() as session:
+            await load_aws_credentials(session)
+    except Exception:
+        logger.warning("Could not preload AWS credentials from database on startup", exc_info=True)
 
     scheduler = Scheduler()
     if settings.SCHEDULER_ENABLED and settings.TASK_BACKEND == "inline":
@@ -117,8 +148,8 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
-    settings.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-    app.mount(settings.MEDIA_URL_PATH, StaticFiles(directory=settings.MEDIA_ROOT), name="media")
+    media_dir = resolve_writable_media_root()
+    app.mount(settings.MEDIA_URL_PATH, StaticFiles(directory=media_dir), name="media")
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict:

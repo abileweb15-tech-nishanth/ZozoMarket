@@ -174,7 +174,7 @@ export default function AutomationBuilder({ id }: { id: string }) {
     try {
       setBusy(true)
       await api.automations.simulateEvent(id, 'open')
-      toast.success('Simulated email open! The condition check will evaluate to Yes (true).')
+      toast.success('Test open event recorded. Condition check will evaluate to Yes.')
       await refreshFlow()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not simulate open')
@@ -713,7 +713,7 @@ function StepSettings({ automationId, node, triggerType, triggerConfig, template
           <Field label="Start when">
             <select className={selectClass} value={triggerType} onChange={(event) => onTriggerType(event.target.value)}>
               {TRIGGERS.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-              {LATER_TRIGGERS.map((label) => <option key={label} disabled>{label} (coming soon)</option>)}
+              {LATER_TRIGGERS.map((label) => <option key={label} disabled>{label} (currently unavailable)</option>)}
             </select>
           </Field>
           {triggerType === 'tag_added' && (

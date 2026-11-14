@@ -7,7 +7,7 @@ conditional UPDATEs, so concurrent tracking hits never double count.
 import datetime as dt
 from typing import Literal
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,16 @@ _CAMPAIGN_COUNTER = {
     "bounces": "bounced_count",
     "unsubscribes": "unsubscribed_count",
 }
+
+
+def _active_aws_region() -> str | None:
+    from app.services.aws_credentials import get_aws_credentials
+
+    creds = get_aws_credentials()
+    if creds is None:
+        return None
+    region = (creds.region or "").strip()
+    return region or None
 
 
 def _pct(part: float, whole: float) -> float | None:
@@ -61,6 +71,7 @@ async def bump_stats(
     if wid is None:
         return
 
+    region = _active_aws_region() or ""
     exists = await session.scalar(
         select(EmailStatDaily.id).where(
             EmailStatDaily.workspace_id == wid,
@@ -71,9 +82,14 @@ async def bump_stats(
     if exists is None:
         try:
             async with session.begin_nested():
-                session.add(EmailStatDaily(workspace_id=wid, day=day, campaign_id=key))
+                session.add(
+                    EmailStatDaily(workspace_id=wid, day=day, campaign_id=key, aws_region=region)
+                )
         except IntegrityError:
             pass  # created concurrently; fall through to the UPDATE
+    values = {c: getattr(EmailStatDaily, c) + n for c, n in increments.items()}
+    if region:
+        values["aws_region"] = region
     await session.execute(
         update(EmailStatDaily)
         .where(
@@ -81,18 +97,17 @@ async def bump_stats(
             EmailStatDaily.day == day,
             EmailStatDaily.campaign_id == key,
         )
-        .values({c: getattr(EmailStatDaily, c) + n for c, n in increments.items()})
+        .values(values)
     )
     if campaign_id:
+        c_values = {
+            _CAMPAIGN_COUNTER[c]: getattr(Campaign, _CAMPAIGN_COUNTER[c]) + n
+            for c, n in increments.items()
+        }
+        if region:
+            c_values["aws_region"] = region
         await session.execute(
-            update(Campaign)
-            .where(Campaign.id == campaign_id)
-            .values(
-                {
-                    _CAMPAIGN_COUNTER[c]: getattr(Campaign, _CAMPAIGN_COUNTER[c]) + n
-                    for c, n in increments.items()
-                }
-            )
+            update(Campaign).where(Campaign.id == campaign_id).values(c_values)
         )
 
 
@@ -236,18 +251,6 @@ async def record_unsubscribe(
 async def _daily_totals(
     session: AsyncSession, start: dt.date, end: dt.date, campaign_id: str | None = None
 ) -> dict[dt.date, dict[str, int]]:
-    # One SES account covers every workspace. A single campaign still uses its own rows,
-    # because CloudWatch only has the shared campaign dimension.
-    if campaign_id is None and settings.EMAIL_PROVIDER == "ses":
-        remote = await ses_stats.daily_counts(start, end)
-        if remote is not None:
-            # CloudWatch counts every open and click, including a second view of the same
-            # message. A rate uses each delivery at most once.
-            for counters in remote.values():
-                delivered = counters.get("delivered", 0)
-                counters["opens"] = min(counters.get("opens", 0), delivered)
-                counters["clicks"] = min(counters.get("clicks", 0), delivered)
-            return remote
     stmt = (
         select(EmailStatDaily.day, *[func.sum(getattr(EmailStatDaily, c)) for c in _STAT_COLUMNS])
         .where(EmailStatDaily.day >= start, EmailStatDaily.day <= end)
@@ -255,9 +258,31 @@ async def _daily_totals(
     )
     if campaign_id is not None:
         stmt = stmt.where(EmailStatDaily.campaign_id == campaign_id)
+    region = _active_aws_region()
+    if region:
+        stmt = stmt.where(EmailStatDaily.aws_region == region)
     result: dict[dt.date, dict[str, int]] = {}
     for row in (await session.execute(stmt)).all():
         result[row[0]] = {c: int(v or 0) for c, v in zip(_STAT_COLUMNS, row[1:], strict=True)}
+    if result:
+        return result
+
+    # Fall back to CloudWatch daily counts only when local workspace stats are empty
+    # and CloudWatch actually returns non-empty datapoints.
+    from app.services.aws_credentials import get_aws_credentials
+
+    if get_aws_credentials() is not None or settings.EMAIL_PROVIDER == "ses":
+        remote = (
+            await ses_stats.daily_counts(start, end, campaign_name=campaign_id)
+            if campaign_id
+            else await ses_stats.daily_counts(start, end)
+        )
+        if remote:
+            for counters in remote.values():
+                delivered = counters.get("delivered", 0)
+                counters["opens"] = min(counters.get("opens", 0), delivered)
+                counters["clicks"] = min(counters.get("clicks", 0), delivered)
+            return remote
     return result
 
 
@@ -329,10 +354,12 @@ async def performance_series(
 
 
 async def campaign_performance(session: AsyncSession, limit: int = 50) -> list[Campaign]:
+    stmt = select(Campaign).where(Campaign.sent_count > 0)
+    region = _active_aws_region()
+    if region:
+        stmt = stmt.where(or_(Campaign.aws_region == region, Campaign.aws_region.is_(None)))
     rows = await session.scalars(
-        select(Campaign)
-        .where(Campaign.sent_count > 0)
-        .order_by(func.coalesce(Campaign.sent_at, Campaign.started_at, Campaign.created_at).desc())
+        stmt.order_by(func.coalesce(Campaign.sent_at, Campaign.started_at, Campaign.created_at).desc())
         .limit(limit)
     )
     return list(rows)

@@ -73,7 +73,7 @@ export function AppHeader() {
         <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">{user?.workspaceName ?? 'Workspace'}</span>
 
         <ThemeToggle />
-        <Button variant="ghost" size="icon" aria-label="Help" onClick={() => toast('Help center is a demo in this prototype.')}>
+        <Button variant="ghost" size="icon" aria-label="Help" onClick={() => toast.info('Help center is currently not available.')}>
           <CircleHelp />
         </Button>
 

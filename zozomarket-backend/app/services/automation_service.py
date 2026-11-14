@@ -583,9 +583,17 @@ async def _send_node_email(
     from_email = (config.get("from_email") or "").strip()
     reply_to = (config.get("reply_to") or "").strip() or None
     if workspace is not None:
-        from_name = from_name or (workspace.from_name or "").strip() or workspace.name
-        from_email = from_email or (workspace.from_email or "").strip()
-        reply_to = reply_to or ((workspace.reply_to or "").strip() or None)
+        from app.services.aws_credentials import (
+            credentials_from_workspace,
+            set_aws_credentials_cache,
+        )
+
+        ws_creds = credentials_from_workspace(workspace)
+        if ws_creds is not None:
+            set_aws_credentials_cache(ws_creds)
+        from_name = (workspace.from_name or "").strip() or workspace.name or from_name
+        from_email = (workspace.from_email or "").strip() or from_email
+        reply_to = ((workspace.reply_to or "").strip() or None) or reply_to
     from_name = from_name or settings.EMAIL_FROM_NAME
     from_email = from_email or settings.EMAIL_FROM_ADDRESS
     try:
@@ -946,9 +954,17 @@ async def send_test(
     from_email = (config.get("from_email") or "").strip()
     reply_to = (config.get("reply_to") or "").strip() or None
     if workspace is not None:
-        from_name = from_name or (workspace.from_name or "").strip() or workspace.name
-        from_email = from_email or (workspace.from_email or "").strip()
-        reply_to = reply_to or ((workspace.reply_to or "").strip() or None)
+        from app.services.aws_credentials import (
+            credentials_from_workspace,
+            set_aws_credentials_cache,
+        )
+
+        ws_creds = credentials_from_workspace(workspace)
+        if ws_creds is not None:
+            set_aws_credentials_cache(ws_creds)
+        from_name = (workspace.from_name or "").strip() or workspace.name or from_name
+        from_email = (workspace.from_email or "").strip() or from_email
+        reply_to = ((workspace.reply_to or "").strip() or None) or reply_to
     from_name = from_name or settings.EMAIL_FROM_NAME
     from_email = from_email or settings.EMAIL_FROM_ADDRESS
     try:

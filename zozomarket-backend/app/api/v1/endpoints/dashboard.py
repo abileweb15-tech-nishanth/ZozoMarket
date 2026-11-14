@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
@@ -28,5 +28,11 @@ async def dashboard(db: DbSession, _user: CurrentUser):
 
 
 @router.get("/kpis", response_model=ApiResponse[DashboardKPIs])
-async def kpis(db: DbSession, _user: CurrentUser):
-    return ApiResponse(data=DashboardKPIs(**await analytics_service.dashboard_kpis(db)))
+async def kpis(
+    db: DbSession,
+    _user: CurrentUser,
+    window_days: int = Query(default=30, ge=1, le=365, alias="windowDays"),
+):
+    return ApiResponse(
+        data=DashboardKPIs(**await analytics_service.dashboard_kpis(db, window_days=window_days))
+    )

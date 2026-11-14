@@ -156,19 +156,10 @@ async def test_cors_allows_only_expected_headers(anon_client):
     assert disallowed.status_code == 400
 
 
-def test_sqs_queue_region_must_match_aws_region():
+def test_sqs_queue_url_does_not_fail_startup_when_db_region_differs():
     ok = Settings(
         _env_file=None,
-        AWS_REGION="ap-southeast-2",
         SQS_WORKER_ENABLED=True,
-        SQS_QUEUE_URL="https://sqs.ap-southeast-2.amazonaws.com/123456789012/zozomarket-ses-events-queue",
+        SQS_QUEUE_URL="https://sqs.us-east-1.amazonaws.com/123456789012/zozomarket-ses-events-queue",
     )
-    assert ok.AWS_REGION == "ap-southeast-2"
-
-    with pytest.raises(ValidationError, match="does not match AWS_REGION"):
-        Settings(
-            _env_file=None,
-            AWS_REGION="ap-southeast-2",
-            SQS_WORKER_ENABLED=True,
-            SQS_QUEUE_URL="https://sqs.us-east-1.amazonaws.com/123456789012/zozomarket-ses-events-queue",
-        )
+    assert ok.SQS_WORKER_ENABLED is True

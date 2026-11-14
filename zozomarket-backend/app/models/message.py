@@ -87,6 +87,7 @@ class EmailStatDaily(UUIDMixin, WorkspaceMixin, Base):
     day: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     # Not a FK: "" buckets non-campaign mail, and history survives campaign deletion.
     campaign_id: Mapped[str] = mapped_column(String(36), default="", index=True, nullable=False)
+    aws_region: Mapped[str] = mapped_column(String(64), default="", index=True, nullable=False)
     sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     delivered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     opens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

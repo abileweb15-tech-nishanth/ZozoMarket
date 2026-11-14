@@ -6,7 +6,8 @@ import { LayoutTemplate } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { PageHeader, SearchInput, FilterBar, EmptyState, ConfirmDialog } from '@/components/app/shared'
+import { PageHeader, SearchInput, FilterBar, EmptyState, ConfirmDialog, CardGridSkeleton } from '@/components/app/shared'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api, type EmailBlock } from '@/lib/api'
 import { ensureFooter, starterLayouts } from '@/lib/email-design'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,7 @@ type Card = {
 export default function TemplatesPage() {
   const router = useRouter()
   const [saved, setSaved] = useState<Card[]>([])
+  const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('All')
   const [preview, setPreview] = useState<Card | null>(null)
@@ -55,6 +57,7 @@ export default function TemplatesPage() {
         })
       })
       .catch((err: Error) => { if (active) toast.error(err.message) })
+      .finally(() => { if (active) setLoading(false) })
     starterLayouts.forEach((layout) => {
       const id = `starter-${layout.key}`
       api.templates.render({ design: layout.design(), preheader: layout.preheader })
@@ -139,7 +142,13 @@ export default function TemplatesPage() {
             className={cn('h-8 rounded-full border px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring', cat === item ? 'border-accent-foreground/20 bg-accent font-medium text-accent-foreground' : 'border-border bg-background text-muted-foreground hover:text-foreground')}>{item}</button>
         ))}
       </div>
-      {list.length === 0 ? <EmptyState icon={LayoutTemplate} title="No templates match" description="Try a different category or search term." /> : (
+      {loading ? (
+        <CardGridSkeleton
+          count={8}
+          aspect="aspect-[3/4]"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        />
+      ) : list.length === 0 ? <EmptyState icon={LayoutTemplate} title="No templates match" description="Try a different category or search term." /> : (
         <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {list.map((item) => (
             <li key={item.id} className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
@@ -147,7 +156,7 @@ export default function TemplatesPage() {
                 {thumbs[item.id] ? (
                   <iframe key={thumbs[item.id]} title="" sandbox="" srcDoc={thumbs[item.id]} tabIndex={-1} className="pointer-events-none absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 border-0 bg-white" />
                 ) : (
-                  <span className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading preview…</span>
+                  <Skeleton className="h-full w-full rounded-none" />
                 )}
               </button>
               <div className="flex flex-1 flex-col gap-3 p-4">
@@ -179,7 +188,7 @@ export default function TemplatesPage() {
           {previewHtml ? (
             <iframe key={previewHtml} title={`${preview?.name || 'Template'} preview`} sandbox="" srcDoc={previewHtml} className="h-[60vh] w-full rounded-md border border-border bg-white" />
           ) : (
-            <div className="flex h-[60vh] items-center justify-center rounded-md border border-border text-sm text-muted-foreground">Loading preview…</div>
+            <Skeleton className="h-[60vh] w-full rounded-md" />
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreview(null)}>Close</Button>

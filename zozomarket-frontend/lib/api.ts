@@ -154,6 +154,23 @@ export type EmailPerformancePoint = {
   clicks: number
 }
 
+export type AnalyticsOverview = {
+  start: string
+  end: string
+  sent: number
+  delivered: number
+  opens: number
+  clicks: number
+  bounces: number
+  unsubscribes: number
+  deliveryRate: number | null
+  openRate: number | null
+  clickRate: number | null
+  clickToOpenRate: number | null
+  bounceRate: number | null
+  unsubscribeRate: number | null
+}
+
 export type Kpi = { value: string; trend: number; raw?: number; detail?: string | null }
 
 export type DashboardKPIs = {
@@ -317,6 +334,15 @@ export type WorkspaceSettings = {
   replyTo: string | null
   trackOpens: boolean
   trackClicks: boolean
+  hasAwsAccessKey: boolean
+  hasAwsSecretKey: boolean
+  awsRegion: string
+  awsEncryptionDisabled: boolean
+  sesConfigurationSet: string | null
+  sqsQueueUrl: string | null
+  s3BucketName?: string | null
+  awsS3MediaEnabled: boolean
+  awsProvisioningWarnings?: string[]
   ownerName: string
   ownerEmail: string
 }
@@ -362,7 +388,7 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
       },
     })
   } catch {
-    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
+    throw new Error('Unable to connect to the server. Please check your connection and try again.')
   }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     if (await refreshAccessToken()) return request(path, init, false)
@@ -373,7 +399,7 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
   }
   const body = (await response.json().catch(() => null)) as Envelope<T> | null
   if (!response.ok || !body?.success) {
-    throw new Error(body?.error || `Request failed (${response.status})`)
+    throw new Error(body?.error || 'Something went wrong. Please try again.')
   }
   return body.data as T
 }
@@ -395,7 +421,7 @@ async function listRequest<T>(path: string, init?: RequestInit, retry = true): P
       },
     })
   } catch {
-    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
+    throw new Error('Unable to connect to the server. Please check your connection and try again.')
   }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     if (await refreshAccessToken()) return listRequest(path, init, false)
@@ -406,7 +432,7 @@ async function listRequest<T>(path: string, init?: RequestInit, retry = true): P
   }
   const body = (await response.json().catch(() => null)) as ListEnvelope<T> | null
   if (!response.ok || !body?.success) {
-    throw new Error(body?.error || `Request failed (${response.status})`)
+    throw new Error(body?.error || 'Something went wrong. Please try again.')
   }
   return body.data ?? []
 }
@@ -419,11 +445,11 @@ async function publicRequest<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
   } catch {
-    throw new Error(`Cannot reach the ZozoMarket API at ${API_BASE}.`)
+    throw new Error('Unable to connect to the server. Please check your connection and try again.')
   }
   const body = (await response.json().catch(() => null)) as Envelope<T> | null
   if (!response.ok || !body?.success) {
-    throw new Error(body?.error || `Request failed (${response.status})`)
+    throw new Error(body?.error || 'Something went wrong. Please try again.')
   }
   return body.data as T
 }
@@ -478,6 +504,14 @@ export const api = {
     get: () => request<WorkspaceSettings>('/workspace'),
     update: (data: Partial<WorkspaceSettings>) =>
       request<WorkspaceSettings>('/workspace', { method: 'PATCH', body: JSON.stringify(data) }),
+    updateAws: (data: {
+      awsAccessKeyId?: string
+      awsSecretAccessKey?: string
+      awsRegion?: string
+      awsEncryptionDisabled?: boolean
+      awsS3MediaEnabled?: boolean
+    }) =>
+      request<WorkspaceSettings>('/workspace/aws', { method: 'PATCH', body: JSON.stringify(data) }),
     uploadLogo: (file: File) => {
       const body = new FormData()
       body.append('file', file)
@@ -486,7 +520,8 @@ export const api = {
   },
 
   dashboard: {
-    getKPIs: () => request<DashboardKPIs>('/dashboard/kpis'),
+    getKPIs: (windowDays?: number) =>
+      request<DashboardKPIs>(`/dashboard/kpis${windowDays ? `?windowDays=${windowDays}` : ''}`),
   },
 
   campaigns: {
@@ -634,9 +669,28 @@ export const api = {
   },
 
   analytics: {
-    getEmailPerformance: (interval: 'day' | 'week' | 'month' = 'week') =>
-      request<EmailPerformancePoint[]>(`/analytics/performance?interval=${interval}`),
-    getSesMetrics: (campaign: string = 'all', timeframe: string = '24h') =>
+    getOverview: (start?: string, end?: string) => {
+      const qs = new URLSearchParams()
+      if (start) qs.set('start', start)
+      if (end) qs.set('end', end)
+      const q = qs.toString()
+      return request<AnalyticsOverview>(`/analytics/overview${q ? `?${q}` : ''}`)
+    },
+    getEmailPerformance: (
+      interval: 'day' | 'week' | 'month' = 'week',
+      start?: string,
+      end?: string,
+      campaignId?: string,
+    ) => {
+      const qs = new URLSearchParams({ interval })
+      if (start) qs.set('start', start)
+      if (end) qs.set('end', end)
+      if (campaignId && campaignId !== 'all') qs.set('campaignId', campaignId)
+      return request<EmailPerformancePoint[]>(`/analytics/performance?${qs.toString()}`)
+    },
+    getCampaigns: (limit = 50) =>
+      request<EmailCampaign[]>(`/analytics/campaigns?limit=${limit}`),
+    getSesMetrics: (campaign: string = 'all', timeframe: string = '30d') =>
       request<SesAnalyticsResponse>(`/analytics/ses?campaign=${encodeURIComponent(campaign)}&timeframe=${encodeURIComponent(timeframe)}`),
     getSesCampaigns: () =>
       request<string[]>('/analytics/ses/campaigns'),

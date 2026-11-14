@@ -22,15 +22,9 @@ from app.core.config import settings
 from app.models.base import utcnow
 from app.models.message import EmailMessage
 from app.services import analytics_service
+from app.services.aws_credentials import get_aws_credentials
 
 logger = logging.getLogger(__name__)
-
-
-def _secret(value: object) -> str:
-    if value is None:
-        return ""
-    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
-    return revealed or ""
 
 
 def _fetch_ses_metric_datapoints_sync(
@@ -38,11 +32,12 @@ def _fetch_ses_metric_datapoints_sync(
     start_time: dt.datetime,
     end_time: dt.datetime,
 ) -> list[dict[str, Any]]:
-    access_key = (settings.AWS_ACCESS_KEY_ID or "").strip()
-    secret_key = _secret(settings.AWS_SECRET_ACCESS_KEY)
-    dimension = (settings.SES_CLOUDWATCH_DIMENSION_NAME or "").strip()
-    dimension_value = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
-    if not access_key or not secret_key or not dimension or not dimension_value:
+    creds = get_aws_credentials()
+    if creds is None:
+        return []
+    dimension = (creds.cloudwatch_dimension_name or "").strip()
+    dimension_value = (creds.cloudwatch_dimension_value or "").strip()
+    if not dimension or not dimension_value:
         return []
 
     if start_time.tzinfo is None:
@@ -53,9 +48,9 @@ def _fetch_ses_metric_datapoints_sync(
     try:
         client = boto3.client(
             "cloudwatch",
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
+            region_name=creds.region,
+            aws_access_key_id=creds.access_key_id,
+            aws_secret_access_key=creds.secret_access_key,
         )
         response = client.get_metric_statistics(
             Namespace="AWS/SES",

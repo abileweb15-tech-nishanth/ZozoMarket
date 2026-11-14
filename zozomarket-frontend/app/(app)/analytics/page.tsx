@@ -29,14 +29,18 @@ import {
 import {
   PageHeader,
   KpiCard,
+  KpiCardSkeleton,
   Panel,
+  PanelChartSkeleton,
   NativeSelect,
   Segmented,
+  TableSkeleton,
   TableWrap,
   th,
   td,
   EmptyState,
 } from '@/components/app/shared'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TrendChart, BarsChart, C } from '@/components/app/charts'
 import {
   exportAnalyticsToCsv,
@@ -47,11 +51,10 @@ import {
 } from '@/lib/analytics-export'
 import {
   api,
-  type DashboardKPIs,
+  type AnalyticsOverview,
   type EmailCampaign,
   type EmailPerformancePoint,
   type SesAnalyticsResponse,
-  type SesCampaignBreakdown,
 } from '@/lib/api'
 
 const TABS = ['Email Analytics', 'AWS SES CloudWatch'] as const
@@ -60,47 +63,55 @@ const TIMEFRAME_OPTIONS = [
   { label: 'Last 24 Hours', value: '24h' },
   { label: 'Last 7 Days', value: '7d' },
   { label: 'Last 30 Days', value: '30d' },
+  { label: 'Last 90 Days', value: '90d' },
 ]
 
-// Fallback demo breakdown matching Image 4 when offline or local without CloudWatch credentials
-const FALLBACK_SES_BREAKDOWN: SesCampaignBreakdown[] = [
-  { campaign: 'automation_pilot', sent: 2, delivered: 2, opened: 4, clicked: 0, bounced: 0, complaint: 0, openRate: 200 },
-  { campaign: 'my_automation_campaign', sent: 4, delivered: 4, opened: 8, clicked: 0, bounced: 0, complaint: 0, openRate: 200 },
-  { campaign: 'oct_promo_2026', sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaint: 0, openRate: 0 },
-  { campaign: 'zozomarket', sent: 41, delivered: 41, opened: 57, clicked: 17, bounced: 0, complaint: 0, openRate: 139 },
-]
+function computeDateRange(label: string): { start: string; end: string; interval: 'day' | 'week' | 'month' } {
+  const now = new Date()
+  const end = now.toISOString().slice(0, 10)
+  const startDate = new Date(now)
+  let interval: 'day' | 'week' | 'month' = 'week'
 
-// Fallback demo campaigns matching Image 3 (Production) when local database has 0 campaigns
-const FALLBACK_CAMPAIGNS: EmailCampaign[] = [
-  {
-    id: 'course-promote',
-    name: 'Course promote',
-    subject: 'Course promote subject',
-    type: 'Promotional',
-    status: 'Sent',
-    audience: 'All subscribers',
-    audienceTags: [],
-    recipients: 47,
-    date: '2026-10-26',
-    delivery: 100,
-    open: 100,
-    click: 50,
-  },
-]
+  if (label === 'Last 7 days') {
+    startDate.setDate(startDate.getDate() - 6)
+    interval = 'day'
+  } else if (label === 'Last 30 days') {
+    startDate.setDate(startDate.getDate() - 29)
+    interval = 'day'
+  } else if (label === 'Last 90 days') {
+    startDate.setDate(startDate.getDate() - 89)
+    interval = 'week'
+  } else if (label === 'This year') {
+    startDate.setMonth(0, 1)
+    interval = 'month'
+  } else {
+    startDate.setDate(startDate.getDate() - 29)
+    interval = 'week'
+  }
+
+  return { start: startDate.toISOString().slice(0, 10), end, interval }
+}
 
 export default function EmailAnalyticsPage() {
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>('Email Analytics')
   const [range, setRange] = useState('Last 30 days')
-  const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null)
   const [emailPerformance, setEmailPerformance] = useState<EmailPerformancePoint[]>([])
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
+  const [loadingAnalytics, setLoadingAnalytics] = useState<boolean>(true)
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('all')
+  const [trendInterval, setTrendInterval] = useState<'day' | 'week' | 'month'>('day')
+  const [trendMetric, setTrendMetric] = useState<string>('All Metrics')
+  const [barCampaignId, setBarCampaignId] = useState<string>('all')
+  const [barTypeFilter, setBarTypeFilter] = useState<string>('All Types')
+  const [barMetricFilter, setBarMetricFilter] = useState<string>('Open & Click %')
 
   // AWS SES CloudWatch State
-  const [timeframe, setTimeframe] = useState<string>('7d')
+  const [timeframe, setTimeframe] = useState<string>('30d')
   const [campaign, setCampaign] = useState<string>('all')
   const [availableCampaigns, setAvailableCampaigns] = useState<string[]>([])
   const [sesData, setSesData] = useState<SesAnalyticsResponse | null>(null)
-  const [loadingSes, setLoadingSes] = useState<boolean>(false)
+  const [loadingSes, setLoadingSes] = useState<boolean>(true)
 
   // Fetch CloudWatch SES Metrics
   const loadSesMetrics = useCallback(async (camp: string, tf: string) => {
@@ -112,21 +123,35 @@ export default function EmailAnalyticsPage() {
         setAvailableCampaigns(data.availableCampaigns)
       }
     } catch {
-      // Gracefully maintain offline fallback state
+      // Keep previous state or empty state on failure
     } finally {
       setLoadingSes(false)
     }
   }, [])
 
-  // Initial and reactive loading
+  // Initial and reactive CloudWatch loading
   useEffect(() => {
     loadSesMetrics(campaign, timeframe)
   }, [campaign, timeframe, loadSesMetrics])
 
+  // Reactive Email Analytics loading when date range, interval, or campaign filter changes
   useEffect(() => {
-    api.dashboard.getKPIs().then(setKpis).catch(() => {})
-    api.analytics.getEmailPerformance().then(setEmailPerformance).catch(() => {})
-    api.campaigns.list().then(setCampaigns).catch(() => {})
+    let active = true
+    setLoadingAnalytics(true)
+    const { start, end } = computeDateRange(range)
+    Promise.allSettled([
+      api.analytics.getOverview(start, end).then((d) => { if (active) setOverview(d) }),
+      api.analytics.getEmailPerformance(trendInterval, start, end, selectedCampaignId).then((d) => { if (active) setEmailPerformance(d) }),
+      api.analytics.getCampaigns().then((d) => { if (active) setCampaigns(d) }),
+    ]).finally(() => {
+      if (active) setLoadingAnalytics(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [range, trendInterval, selectedCampaignId])
+
+  useEffect(() => {
     api.analytics
       .getSesCampaigns()
       .then((camps) => {
@@ -137,47 +162,108 @@ export default function EmailAnalyticsPage() {
       .catch(() => {})
   }, [])
 
-  // Display campaigns: use database campaigns if present, or production fallback
-  const displayCampaigns = useMemo(() => {
-    const sent = campaigns.filter((c) => c.open !== null)
-    return sent.length > 0 ? sent : FALLBACK_CAMPAIGNS
-  }, [campaigns])
+  const allComparisonCampaigns = useMemo(() => {
+    const local = campaigns.filter((c) => c.status === 'Sent' || c.open !== null)
+    if (local.length > 0) return local
+    const breakdown = sesData?.breakdown ?? []
+    if (breakdown.length > 0) {
+      return breakdown
+        .filter((b) => b.sent > 0 || b.delivered > 0)
+        .map((b) => ({
+          id: b.campaign,
+          name: b.campaign.replace(/_/g, ' '),
+          type: 'Newsletter' as const,
+          status: 'Sent' as const,
+          audience: `${b.sent.toLocaleString()} sent`,
+          subject: '',
+          date: '',
+          recipients: b.sent,
+          delivery: b.sent > 0 ? Math.round((b.delivered / b.sent) * 1000) / 10 : 0,
+          open: b.openRate,
+          click: b.delivered > 0 ? Math.round((b.clicked / b.delivered) * 1000) / 10 : 0,
+        }))
+    }
+    if (sesData?.mode === 'single' && sesData.campaign && (sesData.metrics.send > 0 || sesData.metrics.delivery > 0)) {
+      const m = sesData.metrics
+      return [
+        {
+          id: sesData.campaign,
+          name: sesData.campaign.replace(/_/g, ' '),
+          type: 'Newsletter' as const,
+          status: 'Sent' as const,
+          audience: `${m.send.toLocaleString()} sent`,
+          subject: '',
+          date: '',
+          recipients: m.send,
+          delivery: sesData.rates.deliveryRate,
+          open: sesData.rates.openRate,
+          click: m.delivery > 0 ? Math.round((m.click / m.delivery) * 1000) / 10 : 0,
+        },
+      ]
+    }
+    return []
+  }, [campaigns, sesData])
 
-  // Display CloudWatch breakdown: use live data if available, or fallback
-  const displayBreakdown = useMemo(() => {
-    if (sesData?.breakdown && sesData.breakdown.length > 0) {
-      return sesData.breakdown
-    }
-    return FALLBACK_SES_BREAKDOWN
-  }, [sesData])
+  const displayCampaigns = useMemo(
+    () =>
+      allComparisonCampaigns.filter(
+        (c) =>
+          (barCampaignId === 'all' || c.id === barCampaignId) &&
+          (barTypeFilter === 'All Types' || c.type === barTypeFilter),
+      ),
+    [allComparisonCampaigns, barCampaignId, barTypeFilter],
+  )
 
-  // CloudWatch metrics with graceful fallback matching Image 4
-  const displayMetrics = useMemo(() => {
-    if (sesData?.metrics && sesData.metrics.send > 0) {
-      return {
-        metrics: sesData.metrics,
-        rates: sesData.rates,
-      }
-    }
-    return {
-      metrics: {
-        send: 47,
-        delivery: 47,
-        open: 69,
-        click: 17,
-        bounce: 0,
-        complaint: 0,
-        reject: 0,
-      },
-      rates: {
-        deliveryRate: 100.0,
-        openRate: 146.8,
-        clickRate: 36.2,
-        bounceRate: 0.0,
-        complaintRate: 0.0,
-      },
-    }
-  }, [sesData])
+  const trendSeries = useMemo(
+    () => [
+      ...(trendMetric === 'All Metrics' || trendMetric === 'Delivered'
+        ? [{ key: 'delivered', label: 'Delivered', color: C.gray }]
+        : []),
+      ...(trendMetric === 'All Metrics' || trendMetric === 'Opens'
+        ? [{ key: 'opens', label: 'Opens', color: C.primary }]
+        : []),
+      ...(trendMetric === 'All Metrics' || trendMetric === 'Clicks'
+        ? [{ key: 'clicks', label: 'Clicks', color: C.indigo }]
+        : []),
+    ],
+    [trendMetric],
+  )
+
+  const barSeries = useMemo(
+    () => [
+      ...(barMetricFilter === 'Open & Click %' || barMetricFilter === 'Open %'
+        ? [{ key: 'open', label: 'Open %', color: C.primary }]
+        : []),
+      ...(barMetricFilter === 'Open & Click %' || barMetricFilter === 'Click %'
+        ? [{ key: 'click', label: 'Click %', color: C.indigo }]
+        : []),
+    ],
+    [barMetricFilter],
+  )
+
+  const displayBreakdown = useMemo(
+    () => sesData?.breakdown ?? [],
+    [sesData],
+  )
+
+  const displayMetrics = useMemo(() => ({
+    metrics: sesData?.metrics ?? {
+      send: 0,
+      delivery: 0,
+      open: 0,
+      click: 0,
+      bounce: 0,
+      complaint: 0,
+      reject: 0,
+    },
+    rates: sesData?.rates ?? {
+      deliveryRate: 0,
+      openRate: 0,
+      clickRate: 0,
+      bounceRate: 0,
+      complaintRate: 0,
+    },
+  }), [sesData])
 
   const selectedTfLabel = TIMEFRAME_OPTIONS.find((t) => t.value === timeframe)?.label || timeframe
   const isOverall = campaign === 'all' || !campaign
@@ -204,9 +290,21 @@ export default function EmailAnalyticsPage() {
           { label: 'Complaints', value: displayMetrics.metrics.complaint.toLocaleString(), detail: `${displayMetrics.rates.complaintRate}% Spam rate` },
         ]
       : [
-          { label: 'Delivered emails', value: kpis?.emailsDelivered.value ?? '47', trend: kpis?.emailsDelivered.trend ?? 100 },
-          { label: 'Avg. open rate', value: kpis?.emailOpenRate.value ?? '100.0%', detail: kpis?.emailOpenRate.detail ?? '47 opened', trend: kpis?.emailOpenRate.trend ?? 100 },
-          { label: 'Avg. click rate', value: kpis?.avgClickRate.value ?? '23.4%', detail: kpis?.avgClickRate.detail ?? '11 clicked', trend: kpis?.avgClickRate.trend ?? 23.4 },
+          {
+            label: 'Delivered emails',
+            value: (overview?.delivered ?? 0).toLocaleString(),
+            detail: `${overview?.deliveryRate ?? 0}% delivery rate`,
+          },
+          {
+            label: 'Avg. open rate',
+            value: `${(overview?.openRate ?? 0).toFixed(1)}%`,
+            detail: `${(overview?.opens ?? 0).toLocaleString()} opened`,
+          },
+          {
+            label: 'Avg. click rate',
+            value: `${(overview?.clickRate ?? 0).toFixed(1)}%`,
+            detail: `${(overview?.clicks ?? 0).toLocaleString()} clicked`,
+          },
         ]
 
     return {
@@ -214,17 +312,11 @@ export default function EmailAnalyticsPage() {
       subtitle: isSes
         ? 'Real-time Amazon SES CloudWatch metrics, dynamic campaign tags, deliverability, and engagement rates.'
         : 'Delivery, open rates, and click engagement across your campaigns.',
-      range: isSes ? `Last ${selectedTfLabel}` : range,
+      range: isSes ? selectedTfLabel : range,
       activeTab,
       generatedAt,
       kpis: kpiItems,
-      performance: emailPerformance.length > 0 ? emailPerformance : [
-        { week: 'Oct 5', delivered: 0, opens: 0, clicks: 0 },
-        { week: 'Oct 12', delivered: 0, opens: 0, clicks: 0 },
-        { week: 'Oct 19', delivered: 0, opens: 0, clicks: 0 },
-        { week: 'Oct 26', delivered: 47, opens: 47, clicks: 11 },
-        { week: 'Nov 2', delivered: 47, opens: 47, clicks: 11 },
-      ],
+      performance: emailPerformance,
       campaigns: displayCampaigns.map((c) => ({
         name: c.name,
         audience: c.audience,
@@ -358,59 +450,127 @@ export default function EmailAnalyticsPage() {
             <h2 id="kpi-heading" className="mb-4 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
               Key Delivery & Engagement Metrics
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <KpiCard
-                label="Delivered emails"
-                value={kpis?.emailsDelivered.value ?? '47'}
-                trend={kpis?.emailsDelivered.trend ?? 100}
-                icon={MailCheck}
-              />
-              <KpiCard
-                label="Avg. open rate"
-                value={kpis?.emailOpenRate.value ?? '100.0%'}
-                detail={kpis?.emailOpenRate.detail ?? '47 opened'}
-                trend={kpis?.emailOpenRate.trend ?? 100}
-                icon={MailOpen}
-              />
-              <KpiCard
-                label="Avg. click rate"
-                value={kpis?.avgClickRate.value ?? '23.4%'}
-                detail={kpis?.avgClickRate.detail ?? '11 clicked'}
-                trend={kpis?.avgClickRate.trend ?? 23.4}
-                icon={MousePointerClick}
-              />
-            </div>
+            {loadingAnalytics ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <KpiCardSkeleton withDetail />
+                <KpiCardSkeleton withDetail />
+                <KpiCardSkeleton withDetail />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <KpiCard
+                  label="Delivered emails"
+                  value={(overview?.delivered ?? 0).toLocaleString()}
+                  detail={`${overview?.sent ?? 0} sent · ${overview?.deliveryRate ?? 0}% delivery`}
+                  icon={MailCheck}
+                />
+                <KpiCard
+                  label="Avg. open rate"
+                  value={`${(overview?.openRate ?? 0).toFixed(1)}%`}
+                  detail={`${(overview?.opens ?? 0).toLocaleString()} opened`}
+                  icon={MailOpen}
+                />
+                <KpiCard
+                  label="Avg. click rate"
+                  value={`${(overview?.clickRate ?? 0).toFixed(1)}%`}
+                  detail={`${(overview?.clicks ?? 0).toLocaleString()} clicked`}
+                  icon={MousePointerClick}
+                />
+              </div>
+            )}
           </section>
 
           {/* Performance Trend & Campaign Comparison Charts */}
           <div className="mb-10 grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Panel title="Email performance trend" description={range}>
-              <TrendChart
-                data={emailPerformance}
-                x="week"
-                kind="line"
-                series={[
-                  { key: 'delivered', label: 'Delivered', color: C.gray },
-                  { key: 'opens', label: 'Opens', color: C.primary },
-                  { key: 'clicks', label: 'Clicks', color: C.indigo },
-                ]}
-              />
-            </Panel>
+            {loadingAnalytics ? (
+              <>
+                <PanelChartSkeleton title="Email performance trend" description={range} />
+                <PanelChartSkeleton title="Campaign comparison" description="Open vs click rate (%)" />
+              </>
+            ) : (
+              <>
+                <Panel
+                  title="Email performance trend"
+                  description={`${range} · ${trendMetric}`}
+                  actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <NativeSelect
+                        label="Filter trend interval"
+                        value={trendInterval}
+                        onChange={(v) => setTrendInterval(v as 'day' | 'week' | 'month')}
+                        options={[
+                          { label: 'Daily', value: 'day' },
+                          { label: 'Weekly', value: 'week' },
+                          { label: 'Monthly', value: 'month' },
+                        ]}
+                      />
+                      <NativeSelect
+                        label="Filter trend by campaign"
+                        value={selectedCampaignId}
+                        onChange={setSelectedCampaignId}
+                        options={[
+                          { label: 'All campaigns', value: 'all' },
+                          ...allComparisonCampaigns.map((c) => ({ label: c.name, value: c.id })),
+                        ]}
+                      />
+                      <NativeSelect
+                        label="Filter trend metric"
+                        value={trendMetric}
+                        onChange={setTrendMetric}
+                        options={['All Metrics', 'Delivered', 'Opens', 'Clicks']}
+                      />
+                    </div>
+                  }
+                >
+                  <TrendChart
+                    data={emailPerformance}
+                    x="week"
+                    kind="line"
+                    series={trendSeries}
+                  />
+                </Panel>
 
-            <Panel title="Campaign comparison" description="Open vs click rate (%)">
-              <BarsChart
-                data={displayCampaigns.map((c) => ({
-                  name: c.name.split(' ').slice(0, 2).join(' '),
-                  open: c.open,
-                  click: c.click,
-                }))}
-                x="name"
-                series={[
-                  { key: 'open', label: 'Open %', color: C.primary },
-                  { key: 'click', label: 'Click %', color: C.indigo },
-                ]}
-              />
-            </Panel>
+                <Panel
+                  title="Campaign comparison"
+                  description="Open vs click rate (%)"
+                  actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <NativeSelect
+                        label="Filter comparison campaign"
+                        value={barCampaignId}
+                        onChange={setBarCampaignId}
+                        options={[
+                          { label: 'All campaigns', value: 'all' },
+                          ...allComparisonCampaigns.map((c) => ({ label: c.name, value: c.id })),
+                        ]}
+                      />
+                      <NativeSelect
+                        label="Filter campaign type"
+                        value={barTypeFilter}
+                        onChange={setBarTypeFilter}
+                        options={['All Types', 'Newsletter', 'Promotional', 'Automated', 'Announcement']}
+                      />
+                      <NativeSelect
+                        label="Filter comparison metric"
+                        value={barMetricFilter}
+                        onChange={setBarMetricFilter}
+                        options={['Open & Click %', 'Open %', 'Click %']}
+                      />
+                    </div>
+                  }
+                >
+                  <BarsChart
+                    data={displayCampaigns.map((c) => ({
+                      name: c.name.split(' ').slice(0, 2).join(' '),
+                      open: c.open ?? 0,
+                      click: c.click ?? 0,
+                    }))}
+                    x="name"
+                    series={barSeries}
+                  />
+                </Panel>
+              </>
+            )}
           </div>
 
           {/* Top-performing email campaigns table */}
@@ -418,32 +578,46 @@ export default function EmailAnalyticsPage() {
             <h2 id="top-campaigns-heading" className="mb-3 text-sm font-semibold">
               Top-performing email campaigns
             </h2>
-            <TableWrap>
-              <table className="w-full">
-                <thead className="border-b border-border bg-muted">
-                  <tr>
-                    {['Campaign Name', 'Audience', 'Delivery Rate', 'Open Rate', 'Click Rate'].map((h) => (
-                      <th key={h} scope="col" className={th}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {displayCampaigns.map((c) => (
-                    <tr key={c.id}>
-                      <td className={`${td} font-medium`}>{c.name}</td>
-                      <td className={td}>{c.audience}</td>
-                      <td className={td}>{c.delivery}%</td>
-                      <td className={td}>
-                        <span className="font-semibold text-primary">{c.open}%</span>
-                      </td>
-                      <td className={td}>{c.click}%</td>
+            {loadingAnalytics ? (
+              <TableSkeleton columns={5} rows={4} />
+            ) : displayCampaigns.length === 0 ? (
+              <Panel>
+                <EmptyState
+                  icon={MailCheck}
+                  title="No sent campaigns yet"
+                  description="Send your first campaign to see per-campaign delivery, open, and click rates here."
+                />
+              </Panel>
+            ) : (
+              <TableWrap>
+                <table className="w-full">
+                  <thead className="border-b border-border bg-muted">
+                    <tr>
+                      {['Campaign Name', 'Audience', 'Delivery Rate', 'Open Rate', 'Click Rate'].map((h) => (
+                        <th key={h} scope="col" className={th}>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {displayCampaigns.map((c) => (
+                      <tr key={c.id}>
+                        <td className={`${td} font-medium`}>{c.name}</td>
+                        <td className={td}>{c.audience}</td>
+                        <td className={td}>{c.delivery !== null ? `${c.delivery}%` : '—'}</td>
+                        <td className={td}>
+                          <span className="font-semibold text-primary">
+                            {c.open !== null ? `${c.open}%` : '—'}
+                          </span>
+                        </td>
+                        <td className={td}>{c.click !== null ? `${c.click}%` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            )}
           </section>
         </div>
       )}
@@ -535,6 +709,20 @@ export default function EmailAnalyticsPage() {
               {loadingSes && <span className="text-xs text-muted-foreground">Updating metrics…</span>}
             </div>
 
+            {loadingSes ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <div key={idx} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-3.5 w-16" />
+                      <Skeleton className="size-4 rounded" />
+                    </div>
+                    <Skeleton className="h-8 w-14" />
+                    <Skeleton className="h-3.5 w-24" />
+                  </div>
+                ))}
+              </div>
+            ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {/* Card 1: Total Sent */}
               <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-all hover:border-border/80">
@@ -623,7 +811,7 @@ export default function EmailAnalyticsPage() {
                   <ShieldAlert className="size-4 text-rose-500" />
                 </div>
                 <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                  {loadingSes ? '…' : displayMetrics.metrics.complaint.toLocaleString()}
+                  {displayMetrics.metrics.complaint.toLocaleString()}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <span className="inline-flex items-center rounded-md bg-rose-500/10 px-1.5 py-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400">
@@ -633,6 +821,7 @@ export default function EmailAnalyticsPage() {
                 </div>
               </div>
             </div>
+            )}
           </section>
 
           {/* Per-Campaign SES CloudWatch Breakdown Table */}
@@ -647,7 +836,9 @@ export default function EmailAnalyticsPage() {
                   </span>
                 }
               >
-                {displayBreakdown.length === 0 ? (
+                {loadingSes ? (
+                  <TableSkeleton columns={8} rows={4} />
+                ) : displayBreakdown.length === 0 ? (
                   <EmptyState
                     icon={Layers}
                     title="No Campaign Breakdown Available"
@@ -730,67 +921,139 @@ export default function EmailAnalyticsPage() {
           )}
 
           {/* Performance Charts below */}
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Panel title="Email performance trend" description={range}>
-              <TrendChart
-                data={emailPerformance}
-                x="week"
-                kind="line"
-                series={[
-                  { key: 'delivered', label: 'Delivered', color: C.gray },
-                  { key: 'opens', label: 'Opens', color: C.primary },
-                  { key: 'clicks', label: 'Clicks', color: C.indigo },
-                ]}
-              />
-            </Panel>
+          {loadingAnalytics ? (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <PanelChartSkeleton />
+              <PanelChartSkeleton />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Panel
+                title="Email performance trend"
+                description={`${range} · ${trendMetric}`}
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <NativeSelect
+                      label="Filter trend interval"
+                      value={trendInterval}
+                      onChange={(v) => setTrendInterval(v as 'day' | 'week' | 'month')}
+                      options={[
+                        { label: 'Daily', value: 'day' },
+                        { label: 'Weekly', value: 'week' },
+                        { label: 'Monthly', value: 'month' },
+                      ]}
+                    />
+                    <NativeSelect
+                      label="Filter trend by campaign"
+                      value={selectedCampaignId}
+                      onChange={setSelectedCampaignId}
+                      options={[
+                        { label: 'All campaigns', value: 'all' },
+                        ...allComparisonCampaigns.map((c) => ({ label: c.name, value: c.id })),
+                      ]}
+                    />
+                    <NativeSelect
+                      label="Filter trend metric"
+                      value={trendMetric}
+                      onChange={setTrendMetric}
+                      options={['All Metrics', 'Delivered', 'Opens', 'Clicks']}
+                    />
+                  </div>
+                }
+              >
+                <TrendChart
+                  data={emailPerformance}
+                  x="week"
+                  kind="line"
+                  series={trendSeries}
+                />
+              </Panel>
 
-            <Panel title="Campaign comparison" description="Open vs click rate (%)">
-              <BarsChart
-                data={displayCampaigns.map((c) => ({
-                  name: c.name.split(' ').slice(0, 2).join(' '),
-                  open: c.open,
-                  click: c.click,
-                }))}
-                x="name"
-                series={[
-                  { key: 'open', label: 'Open %', color: C.primary },
-                  { key: 'click', label: 'Click %', color: C.indigo },
-                ]}
-              />
-            </Panel>
-          </div>
+              <Panel
+                title="Campaign comparison"
+                description="Open vs click rate (%)"
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <NativeSelect
+                      label="Filter comparison campaign"
+                      value={barCampaignId}
+                      onChange={setBarCampaignId}
+                      options={[
+                        { label: 'All campaigns', value: 'all' },
+                        ...allComparisonCampaigns.map((c) => ({ label: c.name, value: c.id })),
+                      ]}
+                    />
+                    <NativeSelect
+                      label="Filter campaign type"
+                      value={barTypeFilter}
+                      onChange={setBarTypeFilter}
+                      options={['All Types', 'Newsletter', 'Promotional', 'Automated', 'Announcement']}
+                    />
+                    <NativeSelect
+                      label="Filter comparison metric"
+                      value={barMetricFilter}
+                      onChange={setBarMetricFilter}
+                      options={['Open & Click %', 'Open %', 'Click %']}
+                    />
+                  </div>
+                }
+              >
+                <BarsChart
+                  data={displayCampaigns.map((c) => ({
+                    name: c.name.split(' ').slice(0, 2).join(' '),
+                    open: c.open ?? 0,
+                    click: c.click ?? 0,
+                  }))}
+                  x="name"
+                  series={barSeries}
+                />
+              </Panel>
+            </div>
+          )}
 
           {/* Top Performing Campaigns Table below */}
           <section aria-labelledby="top-campaigns-heading-ses">
             <h2 id="top-campaigns-heading-ses" className="mb-3 text-sm font-semibold">
               Top-performing email campaigns
             </h2>
-            <TableWrap>
-              <table className="w-full">
-                <thead className="border-b border-border bg-muted">
-                  <tr>
-                    {['Campaign Name', 'Audience', 'Delivery Rate', 'Open Rate', 'Click Rate'].map((h) => (
-                      <th key={h} scope="col" className={th}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {displayCampaigns.map((c) => (
-                    <tr key={c.id}>
-                      <td className={`${td} font-medium`}>{c.name}</td>
-                      <td className={td}>{c.audience}</td>
-                      <td className={td}>{c.delivery}%</td>
-                      <td className={td}>
-                        <span className="font-semibold text-primary">{c.open}%</span>
-                      </td>
-                      <td className={td}>{c.click}%</td>
+            {loadingAnalytics ? (
+              <TableSkeleton columns={5} rows={4} />
+            ) : (
+              <TableWrap>
+                <table className="w-full">
+                  <thead className="border-b border-border bg-muted">
+                    <tr>
+                      {['Campaign Name', 'Audience', 'Delivery Rate', 'Open Rate', 'Click Rate'].map((h) => (
+                        <th key={h} scope="col" className={th}>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {displayCampaigns.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                          No sent campaigns recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      displayCampaigns.map((c) => (
+                        <tr key={c.id}>
+                          <td className={`${td} font-medium`}>{c.name}</td>
+                          <td className={td}>{c.audience}</td>
+                          <td className={td}>{c.delivery ?? '—'}%</td>
+                          <td className={td}>
+                            <span className="font-semibold text-primary">{c.open ?? '—'}%</span>
+                          </td>
+                          <td className={td}>{c.click ?? '—'}%</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </TableWrap>
+            )}
           </section>
         </div>
       )}

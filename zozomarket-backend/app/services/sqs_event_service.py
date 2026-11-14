@@ -24,15 +24,9 @@ from app.core.config import settings
 from app.models.base import utcnow
 from app.models.message import EmailMessage, MessageStatus
 from app.services import analytics_service, automation_service
+from app.services.aws_credentials import get_aws_credentials
 
 logger = logging.getLogger(__name__)
-
-
-def _secret(value: object) -> str:
-    if value is None:
-        return ""
-    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
-    return revealed or ""
 
 
 def _parse_iso_timestamp(stamp: str | None) -> dt.datetime:
@@ -48,15 +42,14 @@ def _parse_iso_timestamp(stamp: str | None) -> dt.datetime:
 
 
 def _get_sqs_client():
-    access_key = (settings.AWS_ACCESS_KEY_ID or "").strip()
-    secret_key = _secret(settings.AWS_SECRET_ACCESS_KEY)
-    if not access_key or not secret_key:
+    creds = get_aws_credentials()
+    if creds is None:
         return None
     return boto3.client(
         "sqs",
-        region_name=settings.AWS_REGION,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
+        region_name=creds.region,
+        aws_access_key_id=creds.access_key_id,
+        aws_secret_access_key=creds.secret_access_key,
     )
 
 
@@ -348,7 +341,8 @@ async def poll_and_process_sqs(
     wait_seconds: int = 5,
 ) -> dict[str, Any]:
     """Poll SQS for messages, process granular SES events, and delete consumed messages."""
-    url = queue_url or settings.SQS_QUEUE_URL
+    creds = get_aws_credentials()
+    url = queue_url or (creds.sqs_queue_url if creds else "") or settings.SQS_QUEUE_URL
     if not url:
         return {"processed": 0, "errors": 0, "status": "no_queue_url"}
 

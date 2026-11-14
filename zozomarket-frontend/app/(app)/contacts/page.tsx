@@ -39,10 +39,12 @@ import {
 import {
   PageHeader,
   KpiCard,
+  KpiCardSkeleton,
   SearchInput,
   NativeSelect,
   FilterBar,
   StatusBadge,
+  TableSkeleton,
   TableWrap,
   ConfirmDialog,
   th,
@@ -74,6 +76,7 @@ const defaultSegmentForm: SegmentFormState = {
 export default function ContactsPage() {
   const [rows, setRows] = useState<Contact[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null)
   const [tagCount, setTagCount] = useState(0)
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -98,9 +101,12 @@ export default function ContactsPage() {
   const [, startTransition] = useTransition()
 
   const reloadData = () => {
-    api.contacts.list().then(setRows).catch((err: Error) => toast.error(err.message))
-    api.contacts.tags().then((tags) => setTagCount(tags.length)).catch(() => {})
-    api.segments.list().then(setSegments).catch(() => {})
+    setLoading(true)
+    Promise.allSettled([
+      api.contacts.list().then(setRows).catch((err: Error) => toast.error(err.message)),
+      api.contacts.tags().then((tags) => setTagCount(tags.length)).catch(() => {}),
+      api.segments.list().then(setSegments).catch(() => {}),
+    ]).finally(() => setLoading(false))
   }
 
   useEffect(() => {
@@ -344,12 +350,21 @@ export default function ContactsPage() {
         }
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Total Contacts" value={String(rows.length)} icon={Users} />
-        <KpiCard label="Subscribed" value={String(rows.filter((r) => r.status === 'Subscribed').length)} icon={UserCheck} />
-        <KpiCard label="Unsubscribed" value={String(rows.filter((r) => r.status === 'Unsubscribed').length)} icon={UserX} />
-        <KpiCard label="Audience Segments" value={String(segments.length)} icon={Layers} />
-      </div>
+      {loading ? (
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <KpiCardSkeleton />
+          <KpiCardSkeleton />
+          <KpiCardSkeleton />
+          <KpiCardSkeleton />
+        </div>
+      ) : (
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <KpiCard label="Total Contacts" value={String(rows.length)} icon={Users} />
+          <KpiCard label="Subscribed" value={String(rows.filter((r) => r.status === 'Subscribed').length)} icon={UserCheck} />
+          <KpiCard label="Unsubscribed" value={String(rows.filter((r) => r.status === 'Unsubscribed').length)} icon={UserX} />
+          <KpiCard label="Audience Segments" value={String(segments.length)} icon={Layers} />
+        </div>
+      )}
 
       {/* Segments Pill Selector Bar */}
       <div className="mb-6 rounded-xl border border-border bg-card p-3 shadow-xs">
@@ -485,6 +500,9 @@ export default function ContactsPage() {
       </FilterBar>
 
       {/* Contacts Table */}
+      {loading ? (
+        <TableSkeleton columns={9} rows={6} />
+      ) : (
       <TableWrap>
         <table className="w-full">
           <thead className="border-b border-border bg-muted">
@@ -610,6 +628,7 @@ export default function ContactsPage() {
           </tbody>
         </table>
       </TableWrap>
+      )}
 
       {/* Create / Edit Segment Dialog */}
       <Dialog open={!!segmentDialog} onOpenChange={(o) => !o && setSegmentDialog(null)}>

@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -826,5 +827,26 @@ function RangeField({ label, min, max, value, suffix, disabled, onChange }: { la
 }
 
 export default function EmailBuilderPage() {
-  return <Suspense fallback={<p className="text-sm text-muted-foreground">Loading builder…</p>}><EmailBuilder /></Suspense>
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4 p-4">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <Skeleton className="h-9 w-56" />
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-24" />
+              <Skeleton className="h-9 w-28" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr_300px]">
+            <Skeleton className="h-[520px] rounded-xl" />
+            <Skeleton className="h-[520px] rounded-xl" />
+            <Skeleton className="h-[520px] rounded-xl" />
+          </div>
+        </div>
+      }
+    >
+      <EmailBuilder />
+    </Suspense>
+  )
 }

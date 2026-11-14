@@ -147,20 +147,6 @@ class Settings(BaseSettings):
                 raise ValueError("PUBLIC_BASE_URL must be the public API address in production")
         return self
 
-    @model_validator(mode="after")
-    def _validate_sqs_region(self) -> "Settings":
-        if self.SQS_WORKER_ENABLED and self.SQS_QUEUE_URL:
-            match = re.match(
-                r"^https://sqs\.([a-z0-9-]+)\.amazonaws\.com/",
-                self.SQS_QUEUE_URL.strip(),
-            )
-            if match and match.group(1) != self.AWS_REGION:
-                raise ValueError(
-                    f"SQS_QUEUE_URL region '{match.group(1)}' does not match "
-                    f"AWS_REGION '{self.AWS_REGION}'"
-                )
-        return self
-
     @property
     def is_sqlite(self) -> bool:
         return self.DATABASE_URL.startswith("sqlite")

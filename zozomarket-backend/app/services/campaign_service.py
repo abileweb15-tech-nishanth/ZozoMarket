@@ -477,6 +477,14 @@ async def sending_identity(
     from_email = (campaign.from_email or "").strip()
     reply_to = (campaign.reply_to or "").strip() or None
     if workspace is not None:
+        from app.services.aws_credentials import (
+            credentials_from_workspace,
+            set_aws_credentials_cache,
+        )
+
+        ws_creds = credentials_from_workspace(workspace)
+        if ws_creds is not None:
+            set_aws_credentials_cache(ws_creds)
         from_name = (workspace.from_name or "").strip() or workspace.name or from_name
         from_email = (workspace.from_email or "").strip() or from_email
         reply_to = ((workspace.reply_to or "").strip() or None) or reply_to

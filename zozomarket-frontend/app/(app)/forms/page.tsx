@@ -25,6 +25,7 @@ import {
   FilterBar,
   StatusBadge,
   TableWrap,
+  TableSkeleton,
   Segmented,
   Panel,
   NativeSelect,
@@ -156,10 +157,15 @@ export default function FormsPage() {
   // Submissions state
   const [activeTab, setActiveTab] = useState<'editor' | 'submissions'>('editor')
   const [submissions, setSubmissions] = useState<FormSubmission[]>([])
+  const [loading, setLoading] = useState(true)
   const [loadingSubmissions, setLoadingSubmissions] = useState(false)
 
   useEffect(() => {
-    api.forms.list().then(setItems).catch((error: Error) => toast.error(error.message))
+    api.forms
+      .list()
+      .then(setItems)
+      .catch((error: Error) => toast.error(error.message))
+      .finally(() => setLoading(false))
   }, [])
 
   const list = items.filter((item) => sameList(item.kind, kind) && item.name.toLowerCase().includes(q.toLowerCase()))
@@ -362,7 +368,10 @@ export default function FormsPage() {
         <SearchInput value={q} onChange={setQ} placeholder="Search forms" className="sm:ml-auto" />
       </FilterBar>
       <p className="mb-4 text-sm text-muted-foreground">{kindNotes[kind]}</p>
-      <TableWrap>
+      {loading ? (
+        <TableSkeleton columns={8} rows={5} />
+      ) : (
+        <TableWrap>
         <table className="w-full">
           <thead className="border-b border-border bg-muted">
             <tr>
@@ -430,6 +439,7 @@ export default function FormsPage() {
           </tbody>
         </table>
       </TableWrap>
+      )}
 
       {selected ? (
         <div id="form-editor" className="mt-8 flex flex-col gap-6">

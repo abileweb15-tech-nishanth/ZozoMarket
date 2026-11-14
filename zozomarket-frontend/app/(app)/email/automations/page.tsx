@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { ConfirmDialog, EmptyState, FilterBar, NativeSelect, PageHeader, SearchInput, StatusBadge, TableWrap, td, th } from '@/components/app/shared'
+import { ConfirmDialog, EmptyState, FilterBar, NativeSelect, PageHeader, SearchInput, StatusBadge, TableSkeleton, TableWrap, td, th } from '@/components/app/shared'
 import { api, type Automation } from '@/lib/api'
 import { fmtDate } from '@/lib/format'
 
@@ -18,13 +18,19 @@ const STATUSES = ['All statuses', 'Draft', 'Active', 'Paused', 'Archived']
 export default function AutomationsPage() {
   const router = useRouter()
   const [rows, setRows] = useState<Automation[]>([])
+  const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All statuses')
   const [toDelete, setToDelete] = useState<Automation | null>(null)
   const [testing, setTesting] = useState<Automation | null>(null)
 
   function load() {
-    api.automations.list().then(setRows).catch((err: Error) => toast.error(err.message))
+    setLoading(true)
+    api.automations
+      .list()
+      .then(setRows)
+      .catch((err: Error) => toast.error(err.message))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -77,6 +83,9 @@ export default function AutomationsPage() {
         <SearchInput value={q} onChange={setQ} placeholder="Search automations" />
         <NativeSelect label="Status" value={status} onChange={setStatus} options={STATUSES} />
       </FilterBar>
+      {loading ? (
+        <TableSkeleton columns={7} rows={5} />
+      ) : (
       <TableWrap>
         <table className="w-full">
           <thead className="border-b border-border bg-muted">
@@ -129,6 +138,7 @@ export default function AutomationsPage() {
         </table>
         {filtered.length === 0 && <EmptyState icon={Workflow} title="No automations yet" description="Create a funnel, then connect a trigger to an email and a delay." />}
       </TableWrap>
+      )}
       <Dialog open={!!testing} onOpenChange={(open) => !open && setTesting(null)}>
         <DialogContent>
           <form className="flex flex-col gap-4" onSubmit={(event) => {

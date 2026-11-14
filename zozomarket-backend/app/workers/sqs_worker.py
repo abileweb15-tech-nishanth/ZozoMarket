@@ -12,6 +12,7 @@ import logging
 from app.core import database
 from app.core.config import settings
 from app.services import sqs_event_service
+from app.services.aws_credentials import get_aws_credentials, load_aws_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,8 @@ async def _sqs_loop(interval: float, wait_seconds: int, max_messages: int) -> No
     while True:
         try:
             async with database.SessionLocal() as session:
+                if get_aws_credentials() is None:
+                    await load_aws_credentials(session)
                 result = await sqs_event_service.poll_and_process_sqs(
                     session,
                     max_messages=max_messages,
@@ -64,6 +67,8 @@ class SqsWorker:
 
 async def run_once() -> dict:
     async with database.SessionLocal() as session:
+        if get_aws_credentials() is None:
+            await load_aws_credentials(session)
         result = await sqs_event_service.poll_and_process_sqs(
             session,
             max_messages=settings.SQS_MAX_MESSAGES,

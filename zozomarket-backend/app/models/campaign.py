@@ -59,6 +59,7 @@ class Campaign(UUIDMixin, WorkspaceMixin, TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     failure_reason: Mapped[str | None] = mapped_column(Text)
+    aws_region: Mapped[str | None] = mapped_column(String(64), index=True)
 
     # Denormalised counters (unique per recipient) kept in sync by analytics_service.
     recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
@@ -87,7 +88,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
   )
 }
 
-export function NativeSelect({ label, value, onChange, options, className }: { label: string; value: string; onChange: (v: string) => void; options: string[]; className?: string }) {
+export function NativeSelect({ label, value, onChange, options, className }: { label: string; value: string; onChange: (v: string) => void; options: readonly (string | { label: string; value: string })[]; className?: string }) {
   return (
     <select
       aria-label={label}
@@ -95,7 +96,11 @@ export function NativeSelect({ label, value, onChange, options, className }: { l
       onChange={(e) => onChange(e.target.value)}
       className={cn('h-10 rounded-lg border border-input bg-background px-3 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none', className)}
     >
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => {
+        const val = typeof o === 'string' ? o : o.value
+        const text = typeof o === 'string' ? o : o.label
+        return <option key={val} value={val}>{text}</option>
+      })}
     </select>
   )
 }
@@ -162,3 +167,100 @@ export function TableWrap({ children }: { children: React.ReactNode }) {
 
 export const th = 'px-4 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap'
 export const td = 'px-4 py-3 text-sm whitespace-nowrap'
+
+export function KpiCardSkeleton({ withDetail = false }: { withDetail?: boolean }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="size-4 rounded" />
+      </div>
+      <Skeleton className="h-8 w-20" />
+      {withDetail && <Skeleton className="h-4 w-28" />}
+      <Skeleton className="h-3.5 w-32" />
+    </div>
+  )
+}
+
+export function PanelChartSkeleton({ title, description }: { title?: string; description?: string }) {
+  return (
+    <Panel title={title} description={description}>
+      <div className="flex h-[240px] flex-col justify-end gap-3 pt-4">
+        <div className="flex flex-1 items-end gap-3 px-2">
+          <Skeleton className="h-[45%] flex-1 rounded-t-md" />
+          <Skeleton className="h-[70%] flex-1 rounded-t-md" />
+          <Skeleton className="h-[55%] flex-1 rounded-t-md" />
+          <Skeleton className="h-[85%] flex-1 rounded-t-md" />
+          <Skeleton className="h-[60%] flex-1 rounded-t-md" />
+          <Skeleton className="h-[75%] flex-1 rounded-t-md" />
+        </div>
+        <div className="flex justify-between gap-2 px-2">
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+export function TableSkeleton({
+  columns,
+  rows = 5,
+}: {
+  columns: number
+  rows?: number
+}) {
+  return (
+    <TableWrap>
+      <table className="w-full">
+        <thead className="border-b border-border bg-muted">
+          <tr>
+            {Array.from({ length: columns }).map((_, idx) => (
+              <th key={idx} className={th}>
+                <Skeleton className="h-3.5 w-20" />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {Array.from({ length: rows }).map((_, rIdx) => (
+            <tr key={rIdx}>
+              {Array.from({ length: columns }).map((_, cIdx) => (
+                <td key={cIdx} className={td}>
+                  <Skeleton className={cn('h-4', cIdx === 0 ? 'w-36' : 'w-20')} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableWrap>
+  )
+}
+
+export function CardGridSkeleton({
+  count = 8,
+  aspect = 'aspect-square',
+  className = 'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',
+}: {
+  count?: number
+  aspect?: string
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      {Array.from({ length: count }).map((_, idx) => (
+        <div key={idx} className="overflow-hidden rounded-xl border border-border bg-card">
+          <Skeleton className={cn('w-full rounded-none', aspect)} />
+          <div className="space-y-2 px-3 py-2.5">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

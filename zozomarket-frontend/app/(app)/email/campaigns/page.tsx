@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { PageHeader, SearchInput, NativeSelect, FilterBar, StatusBadge, TableWrap, ConfirmDialog, EmptyState, th, td } from '@/components/app/shared'
+import { PageHeader, SearchInput, NativeSelect, FilterBar, StatusBadge, TableSkeleton, TableWrap, ConfirmDialog, EmptyState, th, td } from '@/components/app/shared'
 import { api, type EmailCampaign } from '@/lib/api'
 import { fmt, fmtDate } from '@/lib/format'
 
@@ -18,6 +18,7 @@ const pct = (v: number | null) => (v === null ? '—' : `${v}%`)
 export default function CampaignsPage() {
   const router = useRouter()
   const [rows, setRows] = useState<EmailCampaign[]>([])
+  const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All statuses')
   const [period, setPeriod] = useState('All time')
@@ -29,9 +30,15 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     let active = true
-    api.campaigns.list().then((data) => {
-      if (active) setRows(data)
-    }).catch((err: Error) => toast.error(err.message))
+    api.campaigns
+      .list()
+      .then((data) => {
+        if (active) setRows(data)
+      })
+      .catch((err: Error) => toast.error(err.message))
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -54,6 +61,9 @@ export default function CampaignsPage() {
         <NativeSelect label="Status" value={status} onChange={setStatus} options={['All statuses', 'Draft', 'Scheduled', 'Sending', 'Sent', 'Failed']} />
         <NativeSelect label="Date" value={period} onChange={setPeriod} options={['All time', 'October 2026']} />
       </FilterBar>
+      {loading ? (
+        <TableSkeleton columns={8} rows={6} />
+      ) : (
       <TableWrap>
         <table className="w-full">
           <thead className="border-b border-border bg-muted">
@@ -116,6 +126,7 @@ export default function CampaignsPage() {
         </table>
         {filtered.length === 0 && <EmptyState icon={Inbox} title="No campaigns found" description="Try adjusting your search or filters." />}
       </TableWrap>
+      )}
 
       <Dialog open={!!statusEdit} onOpenChange={(open) => !open && setStatusEdit(null)}>
         <DialogContent>

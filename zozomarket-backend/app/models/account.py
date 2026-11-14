@@ -22,6 +22,14 @@ class Workspace(UUIDMixin, TimestampMixin, Base):
     reply_to: Mapped[str | None] = mapped_column(String(320))
     track_opens: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     track_clicks: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    aws_access_key_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aws_secret_access_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aws_region: Mapped[str] = mapped_column(String(64), default="us-east-1", nullable=False)
+    aws_encryption_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ses_configuration_set: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sqs_queue_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    s3_bucket_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    aws_s3_media_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     owner_id: Mapped[str | None] = mapped_column(
         ForeignKey(
             "users.id",

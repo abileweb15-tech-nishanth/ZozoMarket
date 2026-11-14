@@ -15,6 +15,7 @@ import httpx
 from app.core.config import settings
 from app.core.security import sign_token
 from app.services import ses_email
+from app.services.aws_credentials import get_aws_credentials
 from app.services.template_service import contact_variables, html_to_text, render_merge_tags
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ class SesSender:
             email.subject,
             email.html,
             email.text or html_to_text(email.html),
+            from_email=email.from_email,
             from_name=email.from_name,
             reply_to=email.reply_to,
             headers=email.headers,
@@ -120,15 +122,19 @@ class ResendSender:
         return SendResult(provider_message_id=resp.json().get("id", ""))
 
 
-@lru_cache
+_CONSOLE_SENDER = ConsoleSender()
+_SES_SENDER = SesSender()
+
+
 def get_sender() -> EmailSender:
-    match settings.EMAIL_PROVIDER:
-        case "ses":
-            return SesSender()
-        case "resend":
-            return ResendSender()
-        case _:
-            return ConsoleSender()
+    if settings.EMAIL_PROVIDER == "resend":
+        return ResendSender()
+    if get_aws_credentials() is not None or settings.EMAIL_PROVIDER == "ses":
+        return _SES_SENDER
+    return _CONSOLE_SENDER
+
+
+get_sender.cache_clear = lambda: None  # type: ignore[attr-defined]
 
 
 # --- Personalisation & tracking --------------------------------------------------

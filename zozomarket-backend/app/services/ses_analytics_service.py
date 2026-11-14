@@ -15,6 +15,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
+from app.services.aws_credentials import get_aws_credentials
 from app.schemas.ses_analytics import (
     SesAnalyticsResponse,
     SesCampaignBreakdown,
@@ -31,23 +32,15 @@ _ACTIVE_CAMPAIGNS_CACHE: tuple[float, list[str]] = (0.0, [])
 _CACHE_TTL_SECONDS = 30.0
 
 
-def _secret(value: object) -> str:
-    if value is None:
-        return ""
-    revealed = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
-    return revealed or ""
-
-
 def _get_cloudwatch_client():
-    access_key = (settings.AWS_ACCESS_KEY_ID or "").strip()
-    secret_key = _secret(settings.AWS_SECRET_ACCESS_KEY)
-    if not access_key or not secret_key:
+    creds = get_aws_credentials()
+    if creds is None:
         return None
     return boto3.client(
         "cloudwatch",
-        region_name=settings.AWS_REGION,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
+        region_name=creds.region,
+        aws_access_key_id=creds.access_key_id,
+        aws_secret_access_key=creds.secret_access_key,
     )
 
 
@@ -75,10 +68,11 @@ def parse_timeframe(timeframe: str | int | None) -> int:
 
 
 def _discover_active_campaigns_sync() -> list[str]:
+    creds = get_aws_credentials()
+    default_val = (creds.cloudwatch_dimension_value if creds else "zozomarket").strip()
     client = _get_cloudwatch_client()
     if client is None:
-        fallback = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
-        return [fallback] if fallback else []
+        return [default_val] if default_val else []
 
     try:
         paginator = client.get_paginator("list_metrics")
@@ -91,13 +85,11 @@ def _discover_active_campaigns_sync() -> list[str]:
                         if val:
                             campaigns.add(val)
         # Also include default if set
-        default_val = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
         if default_val:
             campaigns.add(default_val)
         return sorted(campaigns)
     except ClientError as exc:
         logger.warning("CloudWatch ListMetrics failed: %s", exc)
-        default_val = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
         return [default_val] if default_val else []
     except Exception:
         logger.warning("Error discovering CloudWatch campaigns", exc_info=True)
@@ -223,9 +215,10 @@ def _fetch_metrics_sync(campaign: str | None, timeframe_hours: int) -> SesAnalyt
     breakdowns: list[SesCampaignBreakdown] = []
     tot_send = tot_delivery = tot_open = tot_click = tot_bounce = tot_complaint = tot_reject = 0
 
+    creds = get_aws_credentials()
     campaign_list = list(available)
     if not campaign_list:
-        default_val = (settings.SES_CLOUDWATCH_DIMENSION_VALUE or "").strip()
+        default_val = (creds.cloudwatch_dimension_value if creds else "zozomarket").strip()
         if default_val:
             campaign_list = [default_val]
 
@@ -263,8 +256,9 @@ def _fetch_metrics_sync(campaign: str | None, timeframe_hours: int) -> SesAnalyt
         tot_reject += c_rej
 
     # Fallback to configuration set dimension if campaign breakdown produced 0 sends
-    if tot_send == 0 and settings.SES_CONFIGURATION_SET:
-        cfg_dims = [{"Name": "ses:configuration-set", "Value": settings.SES_CONFIGURATION_SET}]
+    cfg_set = (creds.configuration_set if creds else "").strip()
+    if tot_send == 0 and cfg_set:
+        cfg_dims = [{"Name": "ses:configuration-set", "Value": cfg_set}]
         cfg_send = _query_metric_sum(client, "Send", cfg_dims, start_utc, now_utc, period)
         if cfg_send > 0:
             tot_send = cfg_send

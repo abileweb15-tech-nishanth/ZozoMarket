@@ -38,6 +38,15 @@ from app.services.email_service import ConsoleSender, get_sender  # noqa: E402
 
 @pytest.fixture(autouse=True)
 async def _fresh_db() -> AsyncIterator[None]:
+    import shutil
+    from pathlib import Path
+
+    from app.core.config import settings
+
+    media_root = Path(settings.MEDIA_ROOT)
+    if media_root.exists():
+        shutil.rmtree(media_root, ignore_errors=True)
+    media_root.mkdir(parents=True, exist_ok=True)
     async with database.engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -46,6 +55,9 @@ async def _fresh_db() -> AsyncIterator[None]:
 
 @pytest.fixture(autouse=True)
 def outbox() -> ConsoleSender:
+    from app.services.aws_credentials import set_aws_credentials_cache
+
+    set_aws_credentials_cache(None)
     sender = get_sender()
     assert isinstance(sender, ConsoleSender)
     sender.outbox.clear()
